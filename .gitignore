@@ -1,0 +1,13 @@
+# Large user-provided micro-CT data (kept out of git)
+ALH83010_z_crop_every4/
+ALH83010_z_crop_every4_labeled/
+BP.CSV
+
+# Generated figures & verbose run logs (regenerable)
+results/figures/*.png
+results/*.log
+
+# Python / OS cruft
+__pycache__/
+*.pyc
+.DS_Store

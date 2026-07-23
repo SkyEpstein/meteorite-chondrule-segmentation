@@ -1,0 +1,45 @@
+{
+  "regime": "leakage-free contiguous z-slab split; threshold tuned on val, frozen for test; foreground=chondrule; N=1 meteorite (ALH 83010)",
+  "baseline": {
+    "method": "intensity>=thr + closing + remove_small_objects",
+    "tuned_intensity_threshold": 34,
+    "val_iou": 0.22480363501533712
+  },
+  "test_metrics": {
+    "iou": 0.13262475410616684,
+    "dice": 0.2341901033424442,
+    "precision": 0.132666429490575,
+    "recall": 0.9976369847585517,
+    "tp": 5868415,
+    "fp": 38365948,
+    "fn": 13900,
+    "auprc": 0.09983674182319606,
+    "ece": 0.1661468064515163,
+    "per_slice_iou_median": 0.13018150021451286,
+    "per_slice_iou_iqr": [
+      0.11276035442960781,
+      0.1500615988533508
+    ]
+  },
+  "split_summary": {
+    "band": [
+      100,
+      496
+    ],
+    "N": 397,
+    "buffer": 12,
+    "n_straddler_instances": 17,
+    "ignored_positive_frac": 0.025871632925688337
+  },
+  "versions": {
+    "python": "3.12.7",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "numpy": "1.26.4",
+    "scipy": "1.13.1",
+    "skimage": "0.24.0",
+    "sklearn": "1.5.1",
+    "tifffile": "2023.4.12",
+    "matplotlib": "3.9.2"
+  },
+  "runtime_sec": 107.6
+}

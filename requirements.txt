@@ -1,0 +1,12 @@
+# Local-Mac stack (constitution). Versions observed at v1 bootstrap 2026-07-23.
+numpy==1.26.4
+scipy==1.13.1
+scikit-image==0.24.0
+scikit-learn==1.5.1
+tifffile==2023.4.12
+matplotlib==3.9.2
+Pillow==10.4.0
+
+# Deep models (Tier C). torch's build is platform-specific — install the right
+# wheel from https://pytorch.org (Apple-MPS on this Mac). Left unpinned on purpose.
+torch

@@ -1,0 +1,21 @@
+{
+  "regime": "TEST slab of the frozen leakage-free split; per-slice median IoU; N=1 meteorite (ALH 83010); geometric estimate (ignored voxels not excluded)",
+  "test_slices": 80,
+  "test_pos_frac": 0.05408756004014625,
+  "boundary_tolerance_iou": {
+    "pm1px_band_iou": 0.9226067447107886,
+    "plus1px_iou": 0.961003643433988,
+    "minus1px_iou": 0.9600742540823402,
+    "pm2px_band_iou": 0.8512456265071985,
+    "plus2px_iou": 0.9246114022307357,
+    "minus2px_iou": 0.9208332523942991
+  },
+  "z_consistency_iou": {
+    "copy_neighbor_iou": 0.8321289605336298,
+    "neighbor_and_iou": 0.8222715267367271,
+    "neighbor_or_iou": 0.8429021310355103
+  },
+  "practical_ceiling_iou_pm1px": 0.9226067447107886,
+  "practical_ceiling_iou_pm2px": 0.8512456265071985,
+  "interpretation": "A predictor perfect except for a \u00b11-2px boundary already caps near 0.85-0.92 IoU, so IoU > ~0.95 is not reachable against these labels."
+}

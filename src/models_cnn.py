@@ -1,0 +1,484 @@
+"""Tier C — PyTorch segmentation CNNs (spec v2 roster C; constitution P2/P3).
+
+Binary chondrule (foreground) vs matrix on micro-CT slices. Everything here
+obeys the same leakage-free contract as tiers A/B:
+
+  * Normalization is ALWAYS ``raw / 255.0`` — a *fixed* scale, never a
+    statistic estimated from any data split. [LEAKAGE][MUST]
+  * Training patches are drawn from the TRAIN arrays only; the validation zone
+    is used solely for model selection / early stop; no test set is touched
+    anywhere in this file. [LEAKAGE][MUST]
+  * The ignore (VALID) mask is applied inside every loss so ignored pixels
+    contribute exactly zero. [MUST]
+
+Models return raw logits (no sigmoid inside ``forward``); ``predict_proba``
+does the sigmoid and returns a [0,1] map, matching the tier-A/B runner API.
+
+Self-test:  python -m src.models_cnn      (architecture shape check only)
+"""
+from __future__ import annotations
+import time
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset
+
+from . import metrics
+
+# ---------------------------------------------------------------------------
+# Device + determinism (seed everything).
+# ---------------------------------------------------------------------------
+DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+
+torch.manual_seed(0)
+RNG = np.random.default_rng(0)
+try:  # deterministic where practical (some MPS kernels have no det. impl.)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+except Exception:  # pragma: no cover - older torch without warn_only
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Normalization — the single, fixed rule. [LEAKAGE][MUST]
+# ---------------------------------------------------------------------------
+def normalize(raw):
+    """Fixed intensity scaling: raw/255 -> float32 in [0,1].
+
+    No mean/std/percentile is ever estimated from data, so thresholds and
+    weights transfer across splits without leakage.
+    """
+    return raw.astype(np.float32) / 255.0
+
+
+def _norm(channels):
+    """GroupNorm for `channels` feature maps.
+
+    GroupNorm carries no running statistics and does not couple samples within
+    a batch, so (unlike BatchNorm) it introduces no batch-statistic leakage.
+    Group count divides the channel count; falls back toward 1 if needed.
+    """
+    groups = 8
+    while channels % groups != 0:
+        groups //= 2
+    return nn.GroupNorm(groups, channels)
+
+
+# ---------------------------------------------------------------------------
+# Building blocks.
+# ---------------------------------------------------------------------------
+class DoubleConv(nn.Module):
+    """(Conv 3x3 -> GroupNorm -> ReLU) x2."""
+
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            _norm(out_ch),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            _norm(out_ch),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class AttentionGate(nn.Module):
+    """Additive attention gate (Oktay et al. 2018) on a skip connection.
+
+    `g` is the decoder gating signal, `skip` the encoder feature (same spatial
+    size here); returns the skip re-weighted by a learned [0,1] attention map.
+    """
+
+    def __init__(self, f_g, f_l, f_int):
+        super().__init__()
+        self.w_g = nn.Sequential(nn.Conv2d(f_g, f_int, 1, bias=True), _norm(f_int))
+        self.w_x = nn.Sequential(nn.Conv2d(f_l, f_int, 1, bias=True), _norm(f_int))
+        self.psi = nn.Sequential(nn.Conv2d(f_int, 1, 1, bias=True), nn.Sigmoid())
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, g, skip):
+        g1 = self.w_g(g)
+        x1 = self.w_x(skip)
+        if g1.shape[-2:] != x1.shape[-2:]:  # guard off-by-one spatial sizes
+            g1 = F.interpolate(g1, size=x1.shape[-2:], mode="bilinear",
+                               align_corners=False)
+        att = self.psi(self.relu(g1 + x1))
+        return skip * att
+
+
+# ---------------------------------------------------------------------------
+# Architectures.  Both accept in_ch, so 2.5D works by setting in_ch=K.
+# ---------------------------------------------------------------------------
+class UNet2D(nn.Module):
+    """Standard 2D U-Net returning logits (no sigmoid inside forward)."""
+
+    def __init__(self, in_ch=1, base=32, depth=4):
+        super().__init__()
+        self.depth = depth
+        chs = [base * (2 ** i) for i in range(depth + 1)]  # e.g. 32,64,128,256,512
+        self.inc = DoubleConv(in_ch, chs[0])
+        self.pool = nn.MaxPool2d(2)
+        self.downs = nn.ModuleList(
+            [DoubleConv(chs[i], chs[i + 1]) for i in range(depth)])
+        self.ups = nn.ModuleList(
+            [nn.ConvTranspose2d(chs[i], chs[i - 1], kernel_size=2, stride=2)
+             for i in range(depth, 0, -1)])
+        self.up_convs = nn.ModuleList(
+            [DoubleConv(chs[i], chs[i - 1]) for i in range(depth, 0, -1)])
+        self.outc = nn.Conv2d(chs[0], 1, kernel_size=1)
+
+    @staticmethod
+    def _cat(x, skip):
+        """Concat decoder feature `x` with `skip`, padding `x` to match size."""
+        dy = skip.size(2) - x.size(2)
+        dx = skip.size(3) - x.size(3)
+        if dy or dx:
+            x = F.pad(x, [dx // 2, dx - dx // 2, dy // 2, dy - dy // 2])
+        return torch.cat([skip, x], dim=1)
+
+    def forward(self, x):
+        skips = [self.inc(x)]
+        for i in range(self.depth):
+            skips.append(self.downs[i](self.pool(skips[-1])))
+        x = skips[-1]  # bottleneck
+        for j in range(self.depth):
+            x = self.ups[j](x)
+            x = self._cat(x, skips[self.depth - 1 - j])
+            x = self.up_convs[j](x)
+        return self.outc(x)
+
+
+class AttentionUNet2D(UNet2D):
+    """UNet2D with an attention gate on each skip connection."""
+
+    def __init__(self, in_ch=1, base=32, depth=4):
+        super().__init__(in_ch=in_ch, base=base, depth=depth)
+        chs = [base * (2 ** i) for i in range(depth + 1)]
+        self.gates = nn.ModuleList(
+            [AttentionGate(chs[i - 1], chs[i - 1], max(chs[i - 1] // 2, 1))
+             for i in range(depth, 0, -1)])
+
+    def forward(self, x):
+        skips = [self.inc(x)]
+        for i in range(self.depth):
+            skips.append(self.downs[i](self.pool(skips[-1])))
+        x = skips[-1]
+        for j in range(self.depth):
+            x = self.ups[j](x)
+            skip = self.gates[j](x, skips[self.depth - 1 - j])
+            x = self._cat(x, skip)
+            x = self.up_convs[j](x)
+        return self.outc(x)
+
+
+# ---------------------------------------------------------------------------
+# 2.5D helper.
+# ---------------------------------------------------------------------------
+def stack_adjacent(raw01, k):
+    """(n,H,W) normalized volume -> (n,k,H,W) of adjacent slices.
+
+    Channel c of output slice i is input slice ``i + (c - k//2)``, with the
+    z-stack ends replicate-padded. k must be odd.
+    """
+    assert k % 2 == 1, "k must be odd"
+    n = raw01.shape[0]
+    half = k // 2
+    idx = np.arange(n)
+    chans = [raw01[np.clip(idx + (c - half), 0, n - 1)] for c in range(k)]
+    return np.stack(chans, axis=1)  # (n, k, H, W)
+
+
+# ---------------------------------------------------------------------------
+# Losses.  Every loss zeroes out ignored pixels via the VALID mask. [MUST]
+# ---------------------------------------------------------------------------
+def _masked_mean(per_pixel, valid):
+    """Mean of a per-pixel loss over valid pixels only (guarding zero valid)."""
+    denom = valid.sum().clamp(min=1.0)
+    return (per_pixel * valid).sum() / denom
+
+
+def bce_loss(logits, target, valid, pos_weight=None):
+    """Binary cross-entropy, averaged over valid pixels only."""
+    per_pixel = F.binary_cross_entropy_with_logits(
+        logits, target, pos_weight=pos_weight, reduction="none")
+    return _masked_mean(per_pixel, valid)
+
+
+def dice_loss(logits, target, valid, eps=1.0):
+    """Soft foreground Dice on sigmoid(logits); invalid pixels excluded.
+
+    Masking the probability and target by `valid` before the region sums makes
+    ignored pixels contribute zero to both intersection and union.
+    """
+    prob = torch.sigmoid(logits) * valid
+    gt = target * valid
+    inter = (prob * gt).sum()
+    denom = prob.sum() + gt.sum()
+    dice = (2.0 * inter + eps) / (denom + eps)
+    return 1.0 - dice
+
+
+def tversky_loss(logits, target, valid, alpha=0.3, beta=0.7, eps=1.0):
+    """Soft Tversky loss; beta>alpha penalizes false negatives (favors recall).
+
+    `prob` and `gt` are pre-masked by `valid`, so invalid pixels drop out of the
+    TP/FP/FN sums entirely.
+    """
+    prob = torch.sigmoid(logits) * valid
+    gt = target * valid
+    tp = (prob * gt).sum()
+    fp = (prob * (1.0 - gt)).sum()
+    fn = ((1.0 - prob) * gt).sum()
+    tversky = (tp + eps) / (tp + alpha * fp + beta * fn + eps)
+    return 1.0 - tversky
+
+
+def focal_loss(logits, target, valid, gamma=2.0, alpha=0.25):
+    """Focal loss, averaged over valid pixels only."""
+    bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+    prob = torch.sigmoid(logits)
+    p_t = prob * target + (1.0 - prob) * (1.0 - target)
+    alpha_t = alpha * target + (1.0 - alpha) * (1.0 - target)
+    per_pixel = alpha_t * (1.0 - p_t) ** gamma * bce
+    return _masked_mean(per_pixel, valid)
+
+
+# ---------------------------------------------------------------------------
+# Patch sampler.  Draws P x P patches from the GIVEN arrays ONLY. [LEAKAGE][MUST]
+# The caller passes TRAIN arrays here — never val/test.
+# ---------------------------------------------------------------------------
+class PatchSet(Dataset):
+    """Random P x P patch sampler over one set of (R, M, V) arrays.
+
+    With probability `pos_frac` a patch is centered on a random VALID positive
+    pixel (M & V); otherwise on a random location. Slices are reflect-padded so
+    any center yields a full patch. For 2.5D (k>1) the input channels are the k
+    adjacent slices at the SAME patch location (z-ends replicate-padded).
+    """
+
+    def __init__(self, R, M, V, patch=128, pos_frac=0.5, length=2000, seed=0,
+                 k=1):
+        assert k % 2 == 1, "k must be odd"
+        self.n, self.H, self.W = R.shape
+        self.patch = patch
+        self.pos_frac = pos_frac
+        self.length = length
+        self.k = k
+        self.rng = np.random.default_rng(seed)
+        half = patch // 2
+        # Fixed normalization (raw/255) then reflect-pad in-plane. [LEAKAGE][MUST]
+        r01 = normalize(R)
+        pad = ((0, 0), (half, half), (half, half))
+        self.Rp = np.pad(r01, pad, mode="reflect")
+        self.Mp = np.pad(M, pad, mode="reflect")
+        self.Vp = np.pad(V, pad, mode="reflect")
+        # Precompute valid-positive coordinates per slice (original, unpadded).
+        self.pos_slices, self.pos_coords = [], {}
+        for i in range(self.n):
+            pv = np.argwhere(M[i] & V[i])
+            if len(pv):
+                self.pos_slices.append(i)
+                self.pos_coords[i] = pv
+
+    def __len__(self):
+        return self.length
+
+    def sample(self):
+        """Draw one (input, target, valid) triple of tensors."""
+        if self.pos_slices and self.rng.random() < self.pos_frac:
+            i = int(self.pos_slices[self.rng.integers(len(self.pos_slices))])
+            coords = self.pos_coords[i]
+            y, x = coords[self.rng.integers(len(coords))]
+            y, x = int(y), int(x)
+        else:
+            i = int(self.rng.integers(self.n))
+            y = int(self.rng.integers(self.H))
+            x = int(self.rng.integers(self.W))
+        p = self.patch
+        # k adjacent slices at the same (y, x); z-ends replicate-padded.
+        chans = []
+        for c in range(self.k):
+            j = min(max(i + (c - self.k // 2), 0), self.n - 1)
+            chans.append(self.Rp[j, y:y + p, x:x + p])
+        inp = np.ascontiguousarray(np.stack(chans, axis=0), dtype=np.float32)
+        tgt = np.ascontiguousarray(self.Mp[i, y:y + p, x:x + p][None], np.float32)
+        val = np.ascontiguousarray(self.Vp[i, y:y + p, x:x + p][None], np.float32)
+        return (torch.from_numpy(inp),      # (k, P, P)
+                torch.from_numpy(tgt),      # (1, P, P)
+                torch.from_numpy(val))      # (1, P, P)
+
+    def __getitem__(self, idx):  # idx ignored: sampling is random by design
+        return self.sample()
+
+
+def _draw_batch(dataset, batch):
+    """Stack `batch` random samples into (B,k,P,P), (B,1,P,P), (B,1,P,P)."""
+    xs, ys, vs = [], [], []
+    for _ in range(batch):
+        x, y, v = dataset.sample()
+        xs.append(x)
+        ys.append(y)
+        vs.append(v)
+    return torch.stack(xs), torch.stack(ys), torch.stack(vs)
+
+
+def _best_val_iou(prob, mask, valid, grid=(0.3, 0.4, 0.5, 0.6, 0.7)):
+    """Best foreground IoU over {0.5} u grid, via metrics.iou (valid honored)."""
+    best_t, best_v = 0.5, -1.0
+    for t in sorted(set((0.5,) + tuple(grid))):
+        v = metrics.iou(prob >= t, mask, valid)
+        if v == v and v > best_v:  # skip NaN
+            best_v, best_t = v, float(t)
+    return best_t, best_v
+
+
+# ---------------------------------------------------------------------------
+# Runner (matches the tier-A/B fit / predict_proba API).
+# ---------------------------------------------------------------------------
+class CNNRunner:
+    """Trains one CNN and exposes predict_proba -> (n,H,W) in [0,1].
+
+    `make_model(in_ch)` builds the net; `loss_fn(logits, target, valid)` is the
+    masked loss.  `.tier` = "C_cnn"; `.name` identifies the run.
+    """
+
+    def __init__(self, name, make_model, loss_fn, k=1, epochs=15,
+                 steps_per_epoch=200, batch=16, patch=128, pos_frac=0.5,
+                 lr=1e-3, pos_weight=None, seed=0):
+        self.name = name
+        self.tier = "C_cnn"
+        self.make_model = make_model
+        self.loss_fn = loss_fn
+        self.k = k
+        self.epochs = epochs
+        self.steps_per_epoch = steps_per_epoch
+        self.batch = batch
+        self.patch = patch
+        self.pos_frac = pos_frac
+        self.lr = lr
+        self.pos_weight = pos_weight
+        self.seed = seed
+        self.model = None
+        self.best_state = None
+        self.best_thr = 0.5
+
+    def fit(self, train, val):
+        """Train on `train` ONLY; use `val` ONLY for model selection. [LEAKAGE]
+
+        train/val are dicts {"raw":(n,H,W) float32, "mask":bool, "valid":bool}.
+        No test set is passed or referenced anywhere in this method.
+        """
+        torch.manual_seed(self.seed)
+        self.model = self.make_model(self.k).to(DEVICE)
+        opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+
+        # --- TRAIN-ONLY data: patches sampled strictly from `train`. ---
+        ds = PatchSet(train["raw"], train["mask"], train["valid"],
+                      patch=self.patch, pos_frac=self.pos_frac,
+                      length=self.steps_per_epoch * self.batch,
+                      seed=self.seed, k=self.k)
+
+        best_iou = -1.0
+        for ep in range(self.epochs):
+            t0 = time.time()
+            self.model.train()
+            for _ in range(self.steps_per_epoch):
+                xb, yb, vb = _draw_batch(ds, self.batch)
+                xb, yb, vb = xb.to(DEVICE), yb.to(DEVICE), vb.to(DEVICE)
+                opt.zero_grad()
+                loss = self.loss_fn(self.model(xb), yb, vb)
+                loss.backward()
+                opt.step()
+
+            # --- VAL-ONLY selection: no gradients, keep best-by-val-IoU. ---
+            prob = self.predict_proba(val["raw"])
+            thr, viou = _best_val_iou(prob, val["mask"], val["valid"])
+            if viou == viou and viou > best_iou:
+                best_iou, self.best_thr = viou, thr
+                self.best_state = {k: v.detach().cpu().clone()
+                                   for k, v in self.model.state_dict().items()}
+            print(f"    [{self.name}] epoch {ep + 1}/{self.epochs} "
+                  f"valIoU={viou:.4f} (thr={thr:.2f}) best={best_iou:.4f} "
+                  f"{time.time() - t0:.1f}s")
+
+        if self.best_state is not None:  # restore best-by-val weights
+            self.model.load_state_dict(self.best_state)
+        return self
+
+    def predict_proba(self, raw):
+        """(n,H,W) raw -> (n,H,W) float32 probabilities in [0,1].
+
+        Overlap-tiled full-slice inference: 256-px tiles, each read with a
+        32-px halo of context; sigmoid outputs are accumulated and averaged
+        where haloed windows overlap. Handles arbitrary H,W; builds the 2.5D
+        input channels internally when k>1.
+        """
+        assert self.model is not None, "call fit() before predict_proba"
+        self.model.eval()
+        vol = stack_adjacent(normalize(raw), self.k)  # (n,k,H,W), fixed scale
+        n, _, H, W = vol.shape
+        tile, halo = 256, 32
+        out = np.zeros((n, H, W), np.float32)
+        with torch.no_grad():
+            for i in range(n):
+                acc = np.zeros((H, W), np.float32)
+                cnt = np.zeros((H, W), np.float32)
+                for y0 in range(0, H, tile):
+                    for x0 in range(0, W, tile):
+                        ya, yb = max(0, y0 - halo), min(H, y0 + tile + halo)
+                        xa, xb = max(0, x0 - halo), min(W, x0 + tile + halo)
+                        win = np.ascontiguousarray(vol[i, :, ya:yb, xa:xb][None])
+                        t = torch.from_numpy(win).to(DEVICE)
+                        p = torch.sigmoid(self.model(t)).cpu().numpy()[0, 0]
+                        acc[ya:yb, xa:xb] += p
+                        cnt[ya:yb, xa:xb] += 1.0
+                out[i] = acc / np.maximum(cnt, 1.0)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Configured roster.
+# ---------------------------------------------------------------------------
+def cnn_models(epochs=15):
+    """Return the tier-C runners. `epochs` kept modest so they finish on MPS.
+
+    Loss defaults already match the spec (Tversky alpha=0.3/beta=0.7 favors
+    recall; focal gamma=2/alpha=0.25), so the loss functions are passed as-is.
+    """
+    def unet(in_ch):
+        return UNet2D(in_ch=in_ch, base=32, depth=4)
+
+    def attention(in_ch):
+        return AttentionUNet2D(in_ch=in_ch, base=32)
+
+    return [
+        CNNRunner("unet2d_dice", unet, dice_loss, k=1, epochs=epochs),
+        CNNRunner("unet2d_tversky", unet, tversky_loss, k=1, epochs=epochs),
+        CNNRunner("unet2d_focal", unet, focal_loss, k=1, epochs=epochs),
+        CNNRunner("unet25d_dice", unet, dice_loss, k=5, epochs=epochs),
+        CNNRunner("attention_unet_dice", attention, dice_loss, k=1, epochs=epochs),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Shape self-test only (no training, no real data).
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    archs = [
+        ("UNet2D(in_ch=1)", UNet2D(in_ch=1, base=32, depth=4), 1),
+        ("AttentionUNet2D(in_ch=1)", AttentionUNet2D(in_ch=1, base=32), 1),
+        ("UNet2D(in_ch=5) [2.5D]", UNet2D(in_ch=5, base=32, depth=4), 5),
+        ("AttentionUNet2D(in_ch=5)", AttentionUNet2D(in_ch=5, base=32), 5),
+    ]
+    for label, net, in_ch in archs:
+        net.eval()
+        x = torch.randn(2, in_ch, 128, 128)
+        with torch.no_grad():
+            y = net(x)
+        assert tuple(y.shape) == (2, 1, 128, 128), (label, tuple(y.shape))
+        print(f"  OK  {label:26s} -> {tuple(y.shape)}")
+    print("shape self-test: OK")
