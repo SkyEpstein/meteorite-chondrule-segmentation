@@ -1,0 +1,14 @@
+{
+  "loss": "dice",
+  "lr": 0.0003,
+  "base": 32,
+  "wd": 0.0001,
+  "aug": false,
+  "pos_frac": 0.5,
+  "name": "p1_ctrl_wd_b32",
+  "val_iou": 0.36402964213006356,
+  "threshold": 0.45,
+  "epochs": 6,
+  "steps": 250,
+  "sec": 584.3
+}

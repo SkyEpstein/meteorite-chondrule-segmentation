@@ -1,0 +1,5 @@
+{
+  "n_unlabeled": 134,
+  "model": "hrnet_lite",
+  "note": "probability maps require the trained weights; the sweep persisted probabilities for train/val/test zones only. Recorded the slice list for a follow-up inference run."
+}

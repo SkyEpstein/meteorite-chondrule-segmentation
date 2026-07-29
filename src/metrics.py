@@ -80,7 +80,15 @@ def expected_calibration_error(prob, gt_bool, valid=None, bins=10):
 def select_threshold(prob, gt_bool, valid=None, grid=None, metric="iou"):
     """Pick the probability threshold maximizing `metric` on the given data."""
     if grid is None:
-        grid = np.linspace(0.05, 0.95, 19)
+        # Floor must sit far below 0.05. Dice-trained CNNs here operate at
+        # 0.002-0.05, so a grid starting at 0.05 pins the selected threshold to
+        # its own boundary — measured: `unet2d_s30000` selected exactly 0.05,
+        # which corrupted the val ranking used to choose between models. This is
+        # the same truncated-grid defect logged three times in CHANGELOG.md.
+        grid = np.concatenate([
+            np.geomspace(1e-6, 0.05, 24),
+            np.linspace(0.05, 0.95, 19),
+        ])
     best_t, best_v = float(grid[0]), -1.0
     for t in grid:
         m = metrics_from_pred(prob >= t, gt_bool, valid)[metric]

@@ -1,0 +1,8 @@
+{
+  "segformer_pretrained": "the PRETRAINED checkpoint is a large download; the architecture family is covered from scratch by segnext_lite / vit_seg / swin_lite below",
+  "transunet_pretrained": "needs pretrained ImageNet ViT weights; the hybrid conv+attention family is covered from scratch by axial_unet and swin_lite",
+  "resnet_unet_pretrained": "torchvision pretrained backbone requires a weights download; resunet covers the residual-encoder family from scratch",
+  "sam": "Segment-Anything foundation model: multi-GB checkpoint, impractical locally",
+  "vision_mamba": "state-space vision models need custom CUDA kernels; no usable MPS implementation",
+  "diffusion_segmentation": "iterative denoising costs orders of magnitude more compute than the whole sweep combined"
+}

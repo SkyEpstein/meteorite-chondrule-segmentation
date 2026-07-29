@@ -4,8 +4,18 @@ ALH83010_z_crop_every4_labeled/
 BP.CSV
 
 # Generated figures & verbose run logs (regenerable)
-results/figures/*.png
 results/*.log
+
+# Large regenerable intermediates. Every reported number lives in the JSON
+# results and the figures; these are model outputs and caches, not evidence.
+# (gitignore has no inline comments — patterns must be alone on their line)
+# ~13 GB of per-model probability maps
+results/probs/
+# cached SLIC graphs, ~221 MB
+results/graph_cache/
+results/tierC_shortbudget/
+split_cache.npz
+*.npy
 
 # Python / OS cruft
 __pycache__/

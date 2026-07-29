@@ -1,0 +1,96 @@
+{
+  "levels": [
+    {
+      "level": 0,
+      "n_regions": 480,
+      "n_alive": 480,
+      "frac_alive": 1.0,
+      "chondrule_retention": 1.0,
+      "threshold": 0.23529411852359772
+    },
+    {
+      "level": 1,
+      "n_regions": 1920,
+      "n_alive": 1920,
+      "frac_alive": 1.0,
+      "chondrule_retention": 1.0,
+      "threshold": 0.09803921729326248
+    },
+    {
+      "level": 2,
+      "n_regions": 7680,
+      "n_alive": 7677,
+      "frac_alive": 0.999970577341267,
+      "chondrule_retention": 1.0,
+      "threshold": 0.0941176488995552
+    },
+    {
+      "level": 3,
+      "n_regions": 30720,
+      "n_alive": 30406,
+      "frac_alive": 0.9967860599326117,
+      "chondrule_retention": 0.9999924206205763,
+      "threshold": 0.09803921729326248
+    },
+    {
+      "level": 4,
+      "n_regions": 144000,
+      "n_alive": 90913,
+      "frac_alive": 0.633574091332712,
+      "chondrule_retention": 0.9999842582119661,
+      "threshold": 0.10196078568696976
+    }
+  ],
+  "val_levels": [
+    {
+      "level": 0,
+      "n_regions": 480,
+      "n_alive": 480,
+      "frac_alive": 1.0,
+      "chondrule_retention": 1.0,
+      "threshold": 0.23529411852359772
+    },
+    {
+      "level": 1,
+      "n_regions": 1920,
+      "n_alive": 1919,
+      "frac_alive": 0.9876120151982221,
+      "chondrule_retention": 1.0,
+      "threshold": 0.09803921729326248
+    },
+    {
+      "level": 2,
+      "n_regions": 7680,
+      "n_alive": 7677,
+      "frac_alive": 0.9875846536191364,
+      "chondrule_retention": 1.0,
+      "threshold": 0.0941176488995552
+    },
+    {
+      "level": 3,
+      "n_regions": 30720,
+      "n_alive": 29013,
+      "frac_alive": 0.4629238655100724,
+      "chondrule_retention": 1.0,
+      "threshold": 0.09803921729326248
+    },
+    {
+      "level": 4,
+      "n_regions": 144000,
+      "n_alive": 46611,
+      "frac_alive": 0.3225210887279853,
+      "chondrule_retention": 1.0,
+      "threshold": 0.10196078568696976
+    }
+  ],
+  "thresholds_from_val": [
+    0.23529411852359772,
+    0.09803921729326248,
+    0.0941176488995552,
+    0.09803921729326248,
+    0.10196078568696976
+  ],
+  "final_frac_alive": 0.633574091332712,
+  "compute_saving": 1.578347368808149,
+  "chondrule_pixel_retention": 0.9999842582119661
+}

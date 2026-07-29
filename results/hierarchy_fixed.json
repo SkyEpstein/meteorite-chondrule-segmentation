@@ -1,0 +1,12 @@
+{
+  "levels": [
+    80,
+    320,
+    1280,
+    6000
+  ],
+  "best_target_recall": 0.99,
+  "test_frac_alive": 0.36837138863000934,
+  "compute_saving": 2.714651655545365,
+  "retention": 0.9991136126322548
+}

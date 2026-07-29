@@ -83,6 +83,19 @@ Classical models train on a balanced pixel subsample; predict full slices.
   whether high-confidence pixels are actually more accurate (selective-prediction
   risk–coverage curve). Distinct from, and composes with, the cross-slice
   z-refinement (R7-style) and the two-model disagreement (R6).
+- **R12 — Learned ERROR model (Sky; proven on REE-logD).** A *regression*
+  meta-model predicting the **magnitude of the base model's error**, not a
+  binary correct/incorrect. Target: the per-pixel residual `|prob - gt|`
+  (equivalently the soft error), plus aggregated per-slice and per-chondrule
+  error. Inputs: the same confidence features as R11. Trained on
+  VALIDATION-zone predictions only (never train — the base model memorizes
+  train). Evaluated by (a) Spearman/Pearson correlation between predicted and
+  actual error, (b) calibration of predicted vs realized error in bins, and
+  (c) a risk-coverage curve compared head-to-head with the R11 classifier.
+  Rationale for keeping both: the classifier answers "can I trust this pixel?",
+  the regressor answers "how wrong is this likely to be?" — the latter is
+  threshold-independent and gives an error bar, which is what makes it useful
+  for flagging whole regions/slices for human review.
 
 ## Acceptance criteria
 - **A1** A leaderboard (`results/v2_leaderboard.json` + table) ranks every run

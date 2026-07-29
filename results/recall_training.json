@@ -1,0 +1,26 @@
+[
+  {
+    "name": "dice_ctrl",
+    "test_iou": 0.23142512979470478,
+    "error": null,
+    "pruned_test_iou": 0.23242816802020352
+  },
+  {
+    "name": "tversky_recall",
+    "test_iou": 0.1528992730689315,
+    "error": null,
+    "pruned_test_iou": 0.19843615105826687
+  },
+  {
+    "name": "focal_tversky",
+    "test_iou": 0.16026059819325267,
+    "error": null,
+    "pruned_test_iou": 0.2029123702070495
+  },
+  {
+    "name": "dice_dilate1",
+    "test_iou": 0.21964306633579952,
+    "error": null,
+    "pruned_test_iou": 0.21431585791697985
+  }
+]

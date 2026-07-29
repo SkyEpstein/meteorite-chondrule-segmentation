@@ -1,0 +1,14 @@
+{
+  "model": "hrnet_lite",
+  "with_majority_policy": {
+    "iou": 0.2598314140710457,
+    "dice": 0.4124860059353831,
+    "precision": 0.33200623225409187,
+    "recall": 0.5444672718139032,
+    "tp": 3202728,
+    "fp": 6443862,
+    "fn": 2679587
+  },
+  "n_straddler_instances": 17,
+  "ignored_positive_frac": 0.025871632925688337
+}

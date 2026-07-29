@@ -236,6 +236,29 @@ def tversky_loss(logits, target, valid, alpha=0.3, beta=0.7, eps=1.0):
     return 1.0 - tversky
 
 
+def focal_tversky_loss(logits, target, valid, alpha=0.1, beta=0.9, gamma=0.75):
+    """Focal-Tversky: (1 - Tversky)^gamma, with beta >> alpha favoring RECALL.
+
+    beta weights false NEGATIVES, alpha weights false positives, so beta >> alpha
+    trains the model to over-predict rather than miss — the regime the
+    over-predict-then-prune pipeline wants (a missed chondrule is unrecoverable;
+    a false alarm is prunable). gamma < 1 focuses gradient on the hard cases.
+    """
+    t = 1.0 - tversky_loss(logits, target, valid, alpha=alpha, beta=beta)
+    return torch.pow(torch.clamp(1.0 - t, min=1e-7), gamma)
+
+
+def tversky_recall_loss(logits, target, valid):
+    """Tversky tuned hard for recall: a miss costs 9x a false alarm."""
+    return tversky_loss(logits, target, valid, alpha=0.1, beta=0.9)
+
+
+def combo_loss(logits, target, valid, pos_weight=None):
+    """Weighted BCE + Dice. With pos_weight > 1 the BCE half penalizes misses."""
+    return (bce_loss(logits, target, valid, pos_weight=pos_weight)
+            + dice_loss(logits, target, valid))
+
+
 def focal_loss(logits, target, valid, gamma=2.0, alpha=0.25):
     """Focal loss, averaged over valid pixels only."""
     bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
@@ -257,11 +280,28 @@ class PatchSet(Dataset):
     pixel (M & V); otherwise on a random location. Slices are reflect-padded so
     any center yields a full patch. For 2.5D (k>1) the input channels are the k
     adjacent slices at the SAME patch location (z-ends replicate-padded).
+
+    `aux` is an optional (n,H,W) float32 volume aligned with `R` (e.g. a coarse
+    GNN map for the cascade): when given it is appended as an EXTRA input
+    channel after the k raw channels, so the input becomes (k+1, P, P).
     """
 
     def __init__(self, R, M, V, patch=128, pos_frac=0.5, length=2000, seed=0,
-                 k=1):
+                 k=1, augment=False, dilate_target=0, aux=None,
+                 invert_target=False, hard_frac=0.0, hard_bright=45):
         assert k % 2 == 1, "k must be odd"
+        self.augment = augment
+        self.hard_frac = float(hard_frac)
+        self._invert = bool(invert_target)
+        if dilate_target:
+            # Grow the TRAINING target outward by `dilate_target` px so the model
+            # learns to over-cover boundaries. Deliberate asymmetry for the
+            # over-predict-then-prune pipeline: an outward error is prunable, an
+            # inward one is unrecoverable. Only the training labels are dilated —
+            # VALIDATION AND TEST ARE ALWAYS SCORED AGAINST THE TRUE MASK.
+            from scipy import ndimage as _ndi
+            M = np.stack([_ndi.binary_dilation(M[i], iterations=dilate_target)
+                          for i in range(M.shape[0])])
         self.n, self.H, self.W = R.shape
         self.patch = patch
         self.pos_frac = pos_frac
@@ -273,8 +313,17 @@ class PatchSet(Dataset):
         r01 = normalize(R)
         pad = ((0, 0), (half, half), (half, half))
         self.Rp = np.pad(r01, pad, mode="reflect")
-        self.Mp = np.pad(M, pad, mode="reflect")
+        # The matrix specialist predicts NOT-chondrule. This MUST happen before
+        # the target is padded — inverting afterwards leaves `Mp` untouched and
+        # the flag silently does nothing. Sampling coords are still derived from
+        # the ORIGINAL chondrule mask below, so it keeps looking at the same
+        # (confusable) places while learning the complementary class.
+        M_t = ((~M) & V) if self._invert else M
+        self.Mp = np.pad(M_t, pad, mode="reflect")
         self.Vp = np.pad(V, pad, mode="reflect")
+        # Auxiliary channel volume, padded exactly like R so it stays aligned.
+        self.Auxp = (None if aux is None else
+                     np.pad(np.asarray(aux, np.float32), pad, mode="reflect"))
         # Precompute valid-positive coordinates per slice (original, unpadded).
         self.pos_slices, self.pos_coords = [], {}
         for i in range(self.n):
@@ -283,12 +332,41 @@ class PatchSet(Dataset):
                 self.pos_slices.append(i)
                 self.pos_coords[i] = pv
 
+        # Hard-negative coordinates for the MATRIX specialist: valid matrix
+        # pixels that either touch a chondrule (dilated boundary ring) or are
+        # bright enough to fall in the chondrule intensity range. These are
+        # exactly the pixels a chondrule model gets wrong, so a model trained
+        # here has decorrelated errors and can act as a genuine veto.
+        self.hard_slices, self.hard_coords = [], {}
+        if self.hard_frac > 0:
+            from scipy import ndimage as _ndi
+            for i in range(self.n):
+                ring = _ndi.binary_dilation(M[i], iterations=4) & ~M[i]
+                bright = (R[i] >= hard_bright) & ~M[i]
+                hv = np.argwhere((ring | bright) & V[i])
+                if len(hv):
+                    self.hard_slices.append(i)
+                    self.hard_coords[i] = hv
+
+
     def __len__(self):
         return self.length
 
     def sample(self):
         """Draw one (input, target, valid) triple of tensors."""
-        if self.pos_slices and self.rng.random() < self.pos_frac:
+        if self.hard_slices and self.rng.random() < self.hard_frac:
+            # HARD-NEGATIVE draw (matrix-specialist training). Centres the patch
+            # on matrix pixels that actually confuse a chondrule model: those
+            # bordering a chondrule, or bright enough to sit in the chondrule
+            # intensity range (measured overlap: matrix p90 = 55 CT vs chondrule
+            # mean ~47). Training a second model on THIS region is what makes its
+            # errors decorrelate from the chondrule model's — an inverted copy of
+            # the same model would just be 1 - p and veto nothing.
+            i = int(self.hard_slices[self.rng.integers(len(self.hard_slices))])
+            coords = self.hard_coords[i]
+            y, x = coords[self.rng.integers(len(coords))]
+            y, x = int(y), int(x)
+        elif self.pos_slices and self.rng.random() < self.pos_frac:
             i = int(self.pos_slices[self.rng.integers(len(self.pos_slices))])
             coords = self.pos_coords[i]
             y, x = coords[self.rng.integers(len(coords))]
@@ -303,10 +381,49 @@ class PatchSet(Dataset):
         for c in range(self.k):
             j = min(max(i + (c - self.k // 2), 0), self.n - 1)
             chans.append(self.Rp[j, y:y + p, x:x + p])
-        inp = np.ascontiguousarray(np.stack(chans, axis=0), dtype=np.float32)
-        tgt = np.ascontiguousarray(self.Mp[i, y:y + p, x:x + p][None], np.float32)
-        val = np.ascontiguousarray(self.Vp[i, y:y + p, x:x + p][None], np.float32)
-        return (torch.from_numpy(inp),      # (k, P, P)
+        inp = np.stack(chans, axis=0).astype(np.float32)
+        tgt = self.Mp[i, y:y + p, x:x + p][None].astype(np.float32)
+        val = self.Vp[i, y:y + p, x:x + p][None].astype(np.float32)
+        aux = (None if self.Auxp is None else
+               self.Auxp[i, y:y + p, x:x + p][None].astype(np.float32))
+
+        if self.augment:
+            # augment="geom" -> flips/rotations only; True/"full" -> also
+            # intensity jitter. Kept separable because round 1 showed the full
+            # bundle HALVED val IoU (0.387 -> 0.202), and intensity is the main
+            # discriminative signal here (chondrules ~50 vs matrix ~32), so
+            # jitter is the prime suspect rather than the geometry.
+            #
+            # Dihedral group: CT texture has no privileged orientation, so
+            # flips/rotations are label-preserving. Applied identically to
+            # input, target and valid mask.
+            if self.rng.random() < 0.5:
+                inp, tgt, val = inp[:, ::-1], tgt[:, ::-1], val[:, ::-1]
+                aux = aux if aux is None else aux[:, ::-1]
+            if self.rng.random() < 0.5:
+                inp, tgt, val = inp[:, :, ::-1], tgt[:, :, ::-1], val[:, :, ::-1]
+                aux = aux if aux is None else aux[:, :, ::-1]
+            r = int(self.rng.integers(4))
+            if r:
+                inp = np.rot90(inp, r, axes=(1, 2))
+                tgt = np.rot90(tgt, r, axes=(1, 2))
+                val = np.rot90(val, r, axes=(1, 2))
+                aux = aux if aux is None else np.rot90(aux, r, axes=(1, 2))
+            # Mild intensity jitter on the INPUT only (never the labels).
+            if self.augment != "geom":
+                inp = np.clip(inp * (1.0 + 0.2 * (self.rng.random() - 0.5))
+                              + 0.1 * (self.rng.random() - 0.5), 0.0, 1.0)
+
+        if aux is not None:
+            # The aux channel is spatially aligned, so it takes the SAME geometry
+            # above; it is concatenated AFTER the jitter block because intensity
+            # jitter must never touch it (it is a probability map, not intensity).
+            inp = np.concatenate([inp, aux], axis=0)
+
+        inp = np.ascontiguousarray(inp, dtype=np.float32)
+        tgt = np.ascontiguousarray(tgt, dtype=np.float32)
+        val = np.ascontiguousarray(val, dtype=np.float32)
+        return (torch.from_numpy(inp),      # (k [+1 aux], P, P)
                 torch.from_numpy(tgt),      # (1, P, P)
                 torch.from_numpy(val))      # (1, P, P)
 
@@ -325,7 +442,17 @@ def _draw_batch(dataset, batch):
     return torch.stack(xs), torch.stack(ys), torch.stack(vs)
 
 
-def _best_val_iou(prob, mask, valid, grid=(0.3, 0.4, 0.5, 0.6, 0.7)):
+def _best_val_iou(prob, mask, valid,
+                  # The epoch-by-epoch CHECKPOINT is chosen with this grid, so it
+                  # must span where the model actually operates. The old default
+                  # (0.3-0.7) was 1-2 orders of magnitude above the eventual
+                  # frozen thresholds (0.002-0.05 for dice-trained CNNs), so
+                  # `best_state` was selected by IoU measured nowhere near the
+                  # operating point — potentially degrading every model in the
+                  # sweep. Models already trained under the old default carry
+                  # this defect; see CHANGELOG.
+                  grid=(0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
+                        0.1, 0.2, 0.3, 0.5, 0.7)):
     """Best foreground IoU over {0.5} u grid, via metrics.iou (valid honored)."""
     best_t, best_v = 0.5, -1.0
     for t in sorted(set((0.5,) + tuple(grid))):
@@ -343,11 +470,17 @@ class CNNRunner:
 
     `make_model(in_ch)` builds the net; `loss_fn(logits, target, valid)` is the
     masked loss.  `.tier` = "C_cnn"; `.name` identifies the run.
+
+    `aux_lookup` is an optional callable `slice2d -> (H,W) float32 aux map`. When
+    set, the aux map of every slice is fed to the net as one EXTRA input channel
+    (so `in_ch = k + 1`), both while training and at inference.
     """
 
     def __init__(self, name, make_model, loss_fn, k=1, epochs=15,
                  steps_per_epoch=200, batch=16, patch=128, pos_frac=0.5,
-                 lr=1e-3, pos_weight=None, seed=0):
+                 lr=1e-3, pos_weight=None, seed=0, val_stride=4,
+                 weight_decay=0.0, augment=False, dilate_target=0,
+                 aux_lookup=None, invert_target=False, hard_frac=0.0):
         self.name = name
         self.tier = "C_cnn"
         self.make_model = make_model
@@ -359,7 +492,14 @@ class CNNRunner:
         self.patch = patch
         self.pos_frac = pos_frac
         self.lr = lr
+        self.val_stride = val_stride
+        self.weight_decay = weight_decay
+        self.augment = augment
+        self.dilate_target = dilate_target
+        self.invert_target = invert_target   # matrix specialist: predict NOT-chondrule
+        self.hard_frac = hard_frac           # fraction of patches on confusable matrix
         self.pos_weight = pos_weight
+        self.aux_lookup = aux_lookup
         self.seed = seed
         self.model = None
         self.best_state = None
@@ -372,14 +512,31 @@ class CNNRunner:
         No test set is passed or referenced anywhere in this method.
         """
         torch.manual_seed(self.seed)
-        self.model = self.make_model(self.k).to(DEVICE)
-        opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        in_ch = self.k + (1 if self.aux_lookup is not None else 0)
+        self.model = self.make_model(in_ch).to(DEVICE)
+        opt = torch.optim.Adam(self.model.parameters(), lr=self.lr,
+                               weight_decay=self.weight_decay)
+        # Cosine LR decay: a constant lr=1e-3 made val IoU oscillate badly.
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.epochs)
 
         # --- TRAIN-ONLY data: patches sampled strictly from `train`. ---
+        aux = None
+        if self.aux_lookup is not None:
+            aux = np.stack([np.asarray(self.aux_lookup(train["raw"][i]), np.float32)
+                            for i in range(train["raw"].shape[0])])
         ds = PatchSet(train["raw"], train["mask"], train["valid"],
                       patch=self.patch, pos_frac=self.pos_frac,
                       length=self.steps_per_epoch * self.batch,
-                      seed=self.seed, k=self.k)
+                      seed=self.seed, k=self.k, augment=self.augment,
+                      dilate_target=self.dilate_target, aux=aux,
+                      invert_target=self.invert_target,
+                      hard_frac=self.hard_frac)
+
+        # Cheap per-epoch selection on a VAL SUBSET; the FULL val set is used
+        # once at the end to freeze the operating threshold. Still strictly
+        # val-only — no test data is touched anywhere here. [LEAKAGE][MUST]
+        s = slice(None, None, max(1, self.val_stride))
+        vsub = (val["raw"][s], val["mask"][s], val["valid"][s])
 
         best_iou = -1.0
         for ep in range(self.epochs):
@@ -389,23 +546,47 @@ class CNNRunner:
                 xb, yb, vb = _draw_batch(ds, self.batch)
                 xb, yb, vb = xb.to(DEVICE), yb.to(DEVICE), vb.to(DEVICE)
                 opt.zero_grad()
-                loss = self.loss_fn(self.model(xb), yb, vb)
+                # pos_weight was previously accepted, stored, and never used —
+                # a dead knob. Thread it through for losses that accept it, so
+                # recall-oriented training (penalize a MISS more than a false
+                # alarm) actually takes effect.
+                if self.pos_weight is None:
+                    loss = self.loss_fn(self.model(xb), yb, vb)
+                else:
+                    pw = torch.as_tensor(float(self.pos_weight), device=DEVICE)
+                    loss = self.loss_fn(self.model(xb), yb, vb, pos_weight=pw)
                 loss.backward()
                 opt.step()
+            sched.step()
 
-            # --- VAL-ONLY selection: no gradients, keep best-by-val-IoU. ---
-            prob = self.predict_proba(val["raw"])
-            thr, viou = _best_val_iou(prob, val["mask"], val["valid"])
+            # --- VAL-ONLY selection (subset): keep best-by-val-IoU. ---
+            prob = self.predict_proba(vsub[0])
+            thr, viou = _best_val_iou(prob, vsub[1], vsub[2])
             if viou == viou and viou > best_iou:
                 best_iou, self.best_thr = viou, thr
                 self.best_state = {k: v.detach().cpu().clone()
                                    for k, v in self.model.state_dict().items()}
             print(f"    [{self.name}] epoch {ep + 1}/{self.epochs} "
-                  f"valIoU={viou:.4f} (thr={thr:.2f}) best={best_iou:.4f} "
-                  f"{time.time() - t0:.1f}s")
+                  f"valIoU_sub={viou:.4f} (thr={thr:.2f}) best={best_iou:.4f} "
+                  f"lr={sched.get_last_lr()[0]:.2e} {time.time() - t0:.1f}s",
+                  flush=True)
 
         if self.best_state is not None:  # restore best-by-val weights
             self.model.load_state_dict(self.best_state)
+        # Freeze the operating threshold on the FULL val set with a finer grid.
+        prob_full = self.predict_proba(val["raw"])
+        self.best_thr, full_iou = _best_val_iou(
+            prob_full, val["mask"], val["valid"],
+            # Grid extended well below 0.05: the first long runs both selected
+            # exactly 0.05, the old grid's minimum — a parameter pinned to its
+            # boundary means the real optimum was outside the search. Dice loss
+            # under ~95% background pushes probabilities low, so the useful
+            # operating points genuinely live down here.
+            grid=tuple(float(x) for x in np.concatenate([
+                np.arange(0.002, 0.05, 0.004), np.arange(0.05, 0.96, 0.05)])))
+        self.best_full_val_iou = float(full_iou)
+        print(f"    [{self.name}] FULL-val IoU={full_iou:.4f} "
+              f"frozen thr={self.best_thr:.2f}", flush=True)
         return self
 
     def predict_proba(self, raw):
@@ -419,6 +600,10 @@ class CNNRunner:
         assert self.model is not None, "call fit() before predict_proba"
         self.model.eval()
         vol = stack_adjacent(normalize(raw), self.k)  # (n,k,H,W), fixed scale
+        if self.aux_lookup is not None:               # extra channel -> (n,k+1,H,W)
+            aux = np.stack([np.asarray(self.aux_lookup(raw[i]), np.float32)
+                            for i in range(raw.shape[0])])
+            vol = np.concatenate([vol, aux[:, None]], axis=1)
         n, _, H, W = vol.shape
         tile, halo = 256, 32
         out = np.zeros((n, H, W), np.float32)
