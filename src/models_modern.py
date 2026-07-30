@@ -1,12 +1,12 @@
 """Modern / alternative segmentation ARCHITECTURES (tier C roster extension).
 
-Six FROM-SCRATCH ``torch.nn.Module`` binary-segmentation nets — no pretrained
+Six FROM-SCRATCH ``torch.nn.Module`` binary-segmentation nets: no pretrained
 weights, no downloads, no dependency beyond torch. They plug straight into
 ``CNNRunner`` in ``src/models_cnn.py`` and obey the same contract:
 
   * ``__init__(self, in_ch=1, base=32)``
   * ``forward(x)`` with ``x`` of shape ``(B, in_ch, H, W)`` float
-  * returns raw LOGITS of shape ``(B, 1, H, W)`` — no sigmoid inside forward.
+  * returns raw LOGITS of shape ``(B, 1, H, W)``, with no sigmoid inside forward.
 
 H and W are arbitrary and are NOT assumed divisible by any stride: every net
 that downsamples resizes intermediate features to the exact skip size and its
@@ -423,7 +423,7 @@ class SirenSeg(nn.Module):
     (sin(30x) first, sin(x) after) then a 1x1 conv gives the logit.
 
     NOTE: this net has NO spatial aggregation beyond the receptive field of a
-    1x1 conv — one pixel plus its coordinate. It is a deliberate contrast to the
+    1x1 conv: one pixel plus its coordinate. It is a deliberate contrast to the
     convolutional models in this module.
     """
 

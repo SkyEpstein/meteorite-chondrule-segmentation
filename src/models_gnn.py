@@ -1,4 +1,4 @@
-"""Tier D — superpixel Graph Neural Network segmenter (spec v2 roster D).
+"""Tier D: superpixel Graph Neural Network segmenter (spec v2 roster D).
 
 Every 2D CT slice becomes a graph: SLIC superpixels are the nodes, region
 adjacency (4-connectivity) supplies the edges, and each node carries the MEAN of
@@ -9,7 +9,7 @@ painted back onto its pixels, so the runner exposes the same
 
 Same leakage-free contract as the other tiers:
 
-  * Normalization is ALWAYS ``raw / 255.0`` — a *fixed* scale, never a statistic
+  * Normalization is ALWAYS ``raw / 255.0``, a *fixed* scale, never a statistic
     estimated from any data split. [LEAKAGE][MUST]
   * ``fit`` trains on TRAIN graphs ONLY; VAL is touched solely to pick the
     operating threshold (and to print progress); no test set is passed or
@@ -41,7 +41,7 @@ from .models_cnn import normalize, _norm
 # The GNN runs on CPU, NOT on the MPS device the CNNs use. PyTorch has no
 # SparseMPS implementation for `aten::_sparse_coo_tensor_with_dims_and_tensors`,
 # so every sparse adjacency op raises NotImplementedError there (verified: it
-# aborts GNNRunner.fit immediately). The cost is nil — a graph is ~6k nodes, so
+# aborts GNNRunner.fit immediately). The cost is nil: a graph is ~6k nodes, so
 # the message passing is microseconds; the expensive part (SLIC + texture
 # features) was always CPU-bound and is now disk-cached anyway.
 DEVICE = "cpu"
@@ -50,8 +50,8 @@ torch.manual_seed(0)
 
 # Superpixel granularity sets a HARD ceiling on this model: painting labels back
 # from superpixels can never beat the "every superpixel gets its majority label"
-# oracle. Measured on real val slices — 1200 segments: 0.771, 3000: 0.837,
-# 6000: 0.878 — at essentially identical cost (~9.5 s/slice, dominated by
+# oracle. Measured on real val slices, 1200 segments give 0.771, 3000 give 0.837
+# and 6000 give 0.878, at essentially identical cost (~9.5 s/slice, dominated by
 # feature extraction, not SLIC). So use 6000: no reason to cap the GNN at 0.77.
 N_SEGMENTS = 6000
 COMPACTNESS = 0.1
@@ -218,7 +218,7 @@ class GNNRunner:
     `.tier` = "D_gnn"; `.name` identifies the run. `train_stride` subsamples the
     TRAIN slices (graph building is the cost); `val_every` sets how often the
     val IoU is printed during training. `model_cls` swaps the message-passing
-    architecture — any module with the `GCN(in_dim, hidden, dropout)` signature
+    architecture: any module with the `GCN(in_dim, hidden, dropout)` signature
     (see `models_gnn_variants`); the default keeps the 3-layer GCN.
     """
 
@@ -243,11 +243,11 @@ class GNNRunner:
         self._cache = {}                # slice content -> built graph
 
     def _graph(self, sl):
-        """Cached build_graph for one slice — SLIC is never recomputed.
+        """Cached build_graph for one slice: SLIC is never recomputed.
 
         Two cache tiers, both keyed by SLICE CONTENT (not by zone/index): an
         in-process dict, then a DISK cache shared across runs and across GNN
-        variants. Content-keying is what makes the disk tier work at all —
+        variants. Content-keying is what makes the disk tier work at all:
         `predict_proba(raw)` receives a bare array and never learns which zone
         it belongs to, so a (zone, index) key could not be formed here.
         Building a graph costs ~9.5 s/slice, so without the shared disk tier
@@ -325,8 +325,8 @@ class GNNRunner:
         # Without this the GNN collapses to a constant output. The 26 node
         # features span a ~20,000x scale ratio (per-column std 1.5e-05 .. 0.29:
         # intensity/centroid terms vs Hessian-eigenvalue and Gabor channels), and
-        # graph convolutions on inputs that badly conditioned cannot learn —
-        # measured degenerate runs: GAT emitted a constant 0.446 everywhere
+        # graph convolutions on inputs that badly conditioned cannot learn. In
+        # measured degenerate runs, GAT emitted a constant 0.446 everywhere
         # (recall 1.000, IoU 0.053) and the plain GCN emitted just two distinct
         # values. Tier B already standardizes (StandardScaler) and the CNNs get a
         # fixed raw/255; the GNN was the one path with no scaling at all.
@@ -402,7 +402,7 @@ class GNNRunner:
         with torch.no_grad():
             for i in range(n):
                 x, adj, labels = self._graph(raw[i])
-                # Same TRAIN-fitted scaling as fit() — applying the model to
+                # Same TRAIN-fitted scaling as fit(): applying the model to
                 # unstandardized features would be a train/apply mismatch.
                 logits = self.model(torch.from_numpy(self._standardize(x)).to(DEVICE),
                                     normalized_adjacency(adj).to(DEVICE))

@@ -1,19 +1,19 @@
 """Recorded bake-off for the confidence meta-model (constitution: choose by
 bake-off, never arbitrarily).
 
-`src/combine.py` hard-codes ONE estimator per meta-model task —
+`src/combine.py` hard-codes ONE estimator per meta-model task:
 `HistGradientBoostingClassifier` for the trust map and
 `HistGradientBoostingRegressor` for the error bar. That choice was never
 measured against anything. This module measures it:
 
-  * **trust task** — classify `(prob >= thr) == mask`, "was the base model's
+  * trust task: classify `(prob >= thr) == mask`, "was the base model's
     prediction at this pixel correct";
-  * **error task** — regress the residual `|prob - gt|`, i.e. how wrong it is;
-  * **free baselines** — margin, raw-probability uncertainty and z-agreement,
+  * error task: regress the residual `|prob - gt|`, i.e. how wrong it is;
+  * free baselines: margin, raw-probability uncertainty and z-agreement,
     which cost NOTHING to compute. They are the controls: a learned meta-model
     that cannot beat `|prob - 0.5|` has not earned its training time.
 
-Every candidate is scored the same way — build a score map, grid-search the
+Every candidate is scored the same way: build a score map, grid-search the
 prune cutoff on VAL, report the pruned validation IoU.
 
 [LEAKAGE][MUST] Every estimator here is FIT on VALIDATION-zone arrays and every
@@ -87,7 +87,7 @@ def regressor_candidates():
 
 
 # ---------------------------------------------------------------------------
-# 2. FREE baselines — no training at all, the controls the learned models must
+# 2. FREE baselines: no training at all, the controls the learned models must
 #    beat to justify their existence.
 # ---------------------------------------------------------------------------
 
@@ -96,9 +96,9 @@ def free_baselines(prob, thr, k=3):
 
     ONLY TWO OF THESE ARE INDEPENDENT. `margin`, `margin_trust` and
     `raw_prob_uncertainty` are monotone transforms of one another (verified:
-    |Spearman rho| = 1.000 between all three pairs), so — because `fit_prune`
-    sweeps a cutoff over each map's own range and `higher_is_worse` flips the
-    comparison — they must yield IDENTICAL pruned IoU. They are kept as an
+    |Spearman rho| = 1.000 between all three pairs), so they must yield
+    IDENTICAL pruned IoU, because `fit_prune` sweeps a cutoff over each map's
+    own range and `higher_is_worse` flips the comparison. They are kept as an
     internal consistency check: if their scores ever differ, something is wrong.
     The genuinely independent zero-cost control is `z_agreement`.
 
@@ -106,7 +106,7 @@ def free_baselines(prob, thr, k=3):
                             close to the decision boundary, i.e. worse.
       margin_trust          |prob - 0.5| as the equivalent TRUST-like map.
       raw_prob_uncertainty  1 - max(prob, 1 - prob).
-      z_agreement           combine.z_agreement(prob, thr, k) — a trust map.
+      z_agreement           combine.z_agreement(prob, thr, k), a trust map.
 
     None of these costs a fit, so any learned candidate that does not beat them
     is not worth running.
@@ -129,7 +129,7 @@ def sample_xy(prob, raw, mask, valid, thr, target, max_px=300_000, seed=0):
     """Sample a (X, y) training set for one meta-model task from VALID pixels.
 
     Features come from `ConfidenceModel._chunks`, so the (n,H,W,11) stack is
-    never materialized — it is ~6 GB for a real zone.
+    never materialized: it is ~6 GB for a real zone.
 
     `target="trust"` -> y is the correctness bool `(prob >= thr) == mask`,
     sampled BALANCED between correct and incorrect because the base model is
@@ -238,7 +238,7 @@ def run_bakeoff(prob_val, raw_val, mask_val, valid_val, thr_ref,
     The base model is first opened up to `target_recall` via
     `combine.recall_threshold` (constitution P9: over-predict, then prune), and
     each candidate's score map is then handed to `combine.fit_prune`, so every
-    family is judged on the one number that matters downstream — the pruned
+    family is judged on the one number that matters downstream: the pruned
     validation IoU.
 
     [LEAKAGE][MUST] Every array here is from the VALIDATION zone: the recall
@@ -300,8 +300,8 @@ def evaluate_on_test(winner_name, est_or_none, kind, prob_test, raw_test,
 
     `thr_feat` is the threshold the SCORE MAP is built at and MUST match the one
     used when the estimator was fit (`thr_ref` in `run_bakeoff`). Two of the
-    confidence features — `z_agreement` and the `(prob >= thr)` binarization —
-    depend on it, so building them at `thr_rec` here while fitting at `thr_ref`
+    confidence features depend on it: `z_agreement` and the `(prob >= thr)`
+    binarization. Building them at `thr_rec` here while fitting at `thr_ref`
     would feed the model a different feature distribution than it was trained
     on. Defaults to `thr_rec` only for the degenerate case where the two are the
     same. The PRUNE itself still operates at `thr_rec`.
@@ -321,8 +321,8 @@ def evaluate_on_test(winner_name, est_or_none, kind, prob_test, raw_test,
 # ---------------------------------------------------------------------------
 
 def _selftest():
-    # NOTE: this fits and scores every candidate on the SAME toy volume — a
-    # smoke test of the plumbing, not an honest meta-model comparison.
+    # NOTE: this fits and scores every candidate on the SAME toy volume. It
+    # is a smoke test of the plumbing, not an honest meta-model comparison.
     raw, mask, prob, _, valid = combine._synthetic()
     thr_ref, _ = metrics.select_threshold(prob, mask, valid)
     rows, fitted = run_bakeoff(prob, raw, mask, valid, thr_ref)

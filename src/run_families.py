@@ -1,10 +1,10 @@
-"""Stage 3/4 driver — sweep every remaining NN family (and the GNN) on the frozen split.
+"""Stage 3/4 driver: sweep every remaining NN family (and the GNN) on the frozen split.
 
 Each family is trained with the BEST regularization recipe found by the
 autoresearch search (read from results/phase1/*.json), so architectures are
 compared on a level footing rather than against hand-picked settings.
 
-Usage (one family per process; run at most 2 concurrently — see constitution P10):
+Usage (one family per process; run at most 2 concurrently, see constitution P10):
     python -m src.run_families list
     python -m src.run_families run <index>
 """
@@ -35,7 +35,7 @@ EXCLUDED = {
                               "compute than the whole sweep combined",
 }
 # NOTE: an earlier version of this list excluded transformers outright. That was
-# too conservative — only the PRETRAINED variants are impractical here. Attention
+# too conservative: only the PRETRAINED variants are impractical here. Attention
 # architectures are trained FROM SCRATCH in models_transformer.py.
 
 
@@ -71,7 +71,7 @@ def families():
         # A budget-override run MUST get its own name. The leaderboard replaces
         # rows by model name, so without a suffix `run 0` (3k steps),
         # `run 0 30 500` (15k) and `run 0 60 500` (30k) would all write the row
-        # "unet2d" and silently overwrite each other — destroying the budget
+        # "unet2d" and silently overwrite each other, destroying the budget
         # curve those runs exist to measure.
         if "_BUDGET" in globals():
             name = f"{name}_s{ep * st}"
@@ -143,7 +143,7 @@ def main():
         return
     if len(sys.argv) > 2 and sys.argv[1] == "run":
         idx = int(sys.argv[2])
-        # Optional budget override: `run <idx> <epochs> <steps>` — used for the
+        # Optional budget override: `run <idx> <epochs> <steps>`. It drives the
         # budget-scaling curve, where the same config is trained at several
         # budgets to see whether the gains have flattened.
         if len(sys.argv) > 4:

@@ -1,17 +1,17 @@
-"""Tier C — FROM-SCRATCH attention-based segmentation architectures.
+"""Tier C: FROM-SCRATCH attention-based segmentation architectures.
 
 Same contract as ``models_cnn``: every architecture takes ``(in_ch=1, base=32)``,
 ``forward`` consumes ``(B, in_ch, H, W)`` floats and returns ``(B, 1, H, W)`` raw
 LOGITS (no sigmoid inside forward), so these drop straight into ``CNNRunner``
 via ``make_model(in_ch)``.
 
-  * NO pretrained weights, NO model zoo, NO downloads — every parameter here is
+  * NO pretrained weights, NO model zoo, NO downloads. Every parameter here is
     randomly initialized and trained on this dataset only. [LEAKAGE][MUST]
   * LayerNorm / GroupNorm only, never BatchNorm: no running statistics and no
     coupling of samples within a batch. [LEAKAGE][MUST]
   * H and W are ARBITRARY. Full 320x320 tiles and ragged edge tiles (288x224,
     100x140, ...) alike are handled by reflect-padding up to the patch/window
-    multiple internally and cropping — or resampling — back, so the output is
+    multiple internally and cropping (or resampling) back, so the output is
     EXACTLY (B, 1, H, W).
 
 Models are deliberately small (well under ~5M parameters each) so they train on
@@ -119,7 +119,7 @@ def _sincos_pos_embed(dim, gh, gw, device, dtype):
 
 
 # ---------------------------------------------------------------------------
-# 1. ViTSeg — from-scratch plain ViT encoder + convolutional decoder.
+# 1. ViTSeg: from-scratch plain ViT encoder + convolutional decoder.
 # ---------------------------------------------------------------------------
 class ViTSeg(nn.Module):
     """Patch-embed -> 4 pre-LN transformer blocks -> 3-stage conv decoder.
@@ -160,7 +160,7 @@ class ViTSeg(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 2. SwinLiteSeg — hierarchical windowed attention.
+# 2. SwinLiteSeg: hierarchical windowed attention.
 # ---------------------------------------------------------------------------
 def _window_partition(x, ws):
     """(B, H, W, C) with H, W multiples of ws -> (B*nW, ws*ws, C), b-major."""
@@ -307,7 +307,7 @@ class SwinLiteSeg(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 3. SegNeXtLite — convolutional attention (multi-scale strip convolutions).
+# 3. SegNeXtLite: convolutional attention (multi-scale strip convolutions).
 # ---------------------------------------------------------------------------
 class _MSCA(nn.Module):
     """Multi-Scale Convolutional Attention gate (no softmax attention).
@@ -392,7 +392,7 @@ class SegNeXtLite(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 4. AxialUNet — U-Net with an axial-attention bottleneck.
+# 4. AxialUNet: U-Net with an axial-attention bottleneck.
 # ---------------------------------------------------------------------------
 class _AxialAttention(nn.Module):
     """MHSA along the height axis, then along the width axis (pre-LN, residual).

@@ -3,12 +3,12 @@
 Two mechanisms together guarantee no chondrule leaks across slabs:
 
 1. **Buffer gaps** of `buffer` z-slices separate train / val / test. This kills
-   *near-duplicate* leakage — adjacent kept-slices (4 original slices apart)
+   *near-duplicate* leakage: adjacent kept-slices (4 original slices apart)
    look almost identical, so a slice must not sit right next to a slice in
    another slab.
 
 2. **Straddler resolution.** Chondrules are labeled as 3D connected components
-   constrained to the same annotator id (`instance_label`) — same-id z-extent
+   constrained to the same annotator id (`instance_label`): same-id z-extent
    median 24, p95 48, max 70 band-slices (a plain *binary* CC over-merges
    touching chondrules to max 182, which is why it is not used). The max extent
    (70) is too long to buffer away without destroying the split, so instead of

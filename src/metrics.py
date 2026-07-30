@@ -1,7 +1,7 @@
 """Segmentation metrics (spec R4). Foreground = chondrule (positive) class.
 
 All hard metrics are computed only over *valid* pixels (an optional boolean
-mask); pixels marked invalid — e.g. voxels of dropped straddler chondrules —
+mask); pixels marked invalid (e.g. voxels of dropped straddler chondrules)
 are excluded from every count. The operating threshold is chosen on validation
 and frozen for the test report (constitution P2).
 """
@@ -82,7 +82,7 @@ def select_threshold(prob, gt_bool, valid=None, grid=None, metric="iou"):
     if grid is None:
         # Floor must sit far below 0.05. Dice-trained CNNs here operate at
         # 0.002-0.05, so a grid starting at 0.05 pins the selected threshold to
-        # its own boundary — measured: `unet2d_s30000` selected exactly 0.05,
+        # its own boundary. Measured: `unet2d_s30000` selected exactly 0.05,
         # which corrupted the val ranking used to choose between models. This is
         # the same truncated-grid defect logged three times in CHANGELOG.md.
         grid = np.concatenate([

@@ -1,4 +1,4 @@
-"""Hierarchical region cascade — split coarse, DROP the empty regions, subdivide.
+"""Hierarchical region cascade: split coarse, DROP the empty regions, subdivide.
 
 A slice is cut into a few coarse regions; every region that contains no
 chondrule is DROPPED outright; the survivors are subdivided and the test is
@@ -6,8 +6,8 @@ repeated, down to fine regions. Only the pixels still alive at the finest level
 ever need to reach a pixel-level model.
 
 Why the hierarchy is built BOTTOM-UP by merging: SLIC at different
-granularities does NOT nest — a fine superpixel is not contained in any single
-coarse superpixel — so a top-down re-segmentation would not give a tree at all.
+granularities does NOT nest (a fine superpixel is not contained in any single
+coarse superpixel), so a top-down re-segmentation would not give a tree at all.
 The fine SLIC segmentation is therefore built once and agglomerated upward on
 the region-adjacency graph, which makes every level an exact refinement of the
 level above it.
@@ -20,7 +20,7 @@ leaves ~8.4% of the image at the finest level (~12x compute saving).
 
 Leakage contract:
 
-  * Intensities are ALWAYS ``raw / 255.0`` (``models_cnn.normalize``) — a fixed
+  * Intensities are ALWAYS ``raw / 255.0`` (``models_cnn.normalize``): a fixed
     scale, never a statistic estimated from any split. [LEAKAGE][MUST]
   * Drop thresholds are FIT ON VAL and FROZEN FOR TEST: call `run_cascade` with
     `thresholds=None` on the VAL zone, take `[lv["threshold"] for lv in
@@ -60,7 +60,7 @@ LEVELS = (20, 80, 320, 1280, N_SEGMENTS)
 
 
 # ---------------------------------------------------------------------------
-# Fine segmentation (the expensive step) — content-keyed disk cache, exactly the
+# Fine segmentation (the expensive step): content-keyed disk cache, exactly the
 # scheme in GNNRunner._graph / _disk_key.
 # ---------------------------------------------------------------------------
 def _disk_key(sl, n_segments):
@@ -155,7 +155,7 @@ def build_hierarchy(raw_slice, n_fine=N_SEGMENTS, levels=LEVELS):
     # than a tiny one does, so one region runs away and swallows the slice.
     # Measured with the pure-intensity cost, the largest level-0 region covered
     # 98.4-99.4% of the slice and the oracle droppable area collapsed to 0.5%
-    # (direct SLIC at the same region count leaves 69% droppable) — which made
+    # (direct SLIC at the same region count leaves 69% droppable), which made
     # the whole coarse-to-fine idea untestable.
     #
     # Ward-style cost scales the intensity difference by the harmonic size term
@@ -218,7 +218,7 @@ def build_hierarchy(raw_slice, n_fine=N_SEGMENTS, levels=LEVELS):
 # 2. Per-level drop rule.
 # ---------------------------------------------------------------------------
 def region_feature(raw_slice, region_map, n_regions):
-    """(n_regions,) float32 — the 99th-percentile normalized intensity per region."""
+    """(n_regions,) float32: the 99th-percentile normalized intensity per region."""
     img = normalize(raw_slice).ravel()
     lab = np.asarray(region_map).ravel()
     order = np.argsort(lab, kind="stable")
@@ -235,7 +235,7 @@ def region_feature(raw_slice, region_map, n_regions):
 
 
 def region_features_rich(raw_slice, region_map, n_regions):
-    """(n_regions, F+11) float32 — the RICH per-region descriptor.
+    """(n_regions, F+11) float32: the RICH per-region descriptor.
 
     One intensity statistic cannot separate a chondrule from bright matrix
     (matrix p90 = 55 CT overlaps chondrule mean ~47), so the learned drop rule
@@ -255,7 +255,7 @@ def region_features_rich(raw_slice, region_map, n_regions):
     Column F repeats column 0 (both are the mean normalized intensity); the
     intensity block is kept as a self-contained 8-statistic summary.
 
-    Intensity is ALWAYS ``raw/255`` (`models_cnn.normalize`) — a fixed scale,
+    Intensity is ALWAYS ``raw/255`` (`models_cnn.normalize`): a fixed scale,
     never a statistic estimated from a split. [LEAKAGE][MUST]
     """
     img = normalize(raw_slice)
@@ -318,7 +318,7 @@ def region_features_rich(raw_slice, region_map, n_regions):
 
 
 def region_has_chondrule(region_map, mask, valid, n_regions):
-    """(n_regions,) bool — True iff the region holds ANY valid chondrule pixel."""
+    """(n_regions,) bool: True iff the region holds ANY valid chondrule pixel."""
     lab = np.asarray(region_map).ravel()
     pos = (np.asarray(mask, bool) & np.asarray(valid, bool)).ravel()
     return np.bincount(lab[pos], minlength=n_regions)[:n_regions] > 0
@@ -350,11 +350,11 @@ class LevelDropClassifier:
     """A LEARNED drop rule for ONE level of the hierarchy.
 
     The intensity rule above is one number per region (the 99th-percentile
-    intensity) against one threshold — the weakest possible test, and measured
-    it drops only ~70% of the area even though ~92.5% of regions are pure
-    matrix, because bright matrix overlaps chondrule intensity. This replaces it
-    with a gradient-boosted classifier over the full `region_features_rich`
-    descriptor, cut at a recall-constrained probability.
+    intensity) against one threshold, the weakest possible test. As measured, it
+    drops only ~70% of the area even though ~92.5% of regions are pure matrix,
+    because bright matrix overlaps chondrule intensity. This replaces it with a
+    gradient-boosted classifier over the full `region_features_rich` descriptor,
+    cut at a recall-constrained probability.
 
     FIT ON VAL, FREEZE, APPLY TO TEST. [LEAKAGE][MUST]
 
@@ -378,7 +378,7 @@ class LevelDropClassifier:
         Regions come from `hierarchies[i].region_labels(level_idx)`, features
         from `region_features_rich`, labels from `region_has_chondrule`. The
         threshold is the largest probability cut still retaining at least
-        `target_recall` of the positive regions — the same rule as
+        `target_recall` of the positive regions, the same rule as
         `fit_drop_threshold`, applied to the model probability instead of the
         intensity percentile. With no positive region the rule is vacuous and
         -inf (drop nothing) is used.
@@ -409,7 +409,7 @@ class LevelDropClassifier:
         return self
 
     def predict_keep(self, raw_slice, region_map, n_regions):
-        """(n_regions,) bool — True = KEEP the region, False = drop it.
+        """(n_regions,) bool: True = KEEP the region, False = drop it.
 
         Applies the FROZEN model and threshold unchanged, so this is the path a
         test slice takes; nothing here is fit. [LEAKAGE][MUST]
@@ -431,15 +431,15 @@ def run_cascade(raw, mask, valid, thresholds=None, levels=LEVELS,
     level's threshold are dropped; a region at the next (finer) level is alive
     only if its parent survived.
 
-    `thresholds=None` FITS one threshold per level on the data passed in — the
-    caller passes VAL. A list of thresholds APPLIES them unchanged — that is the
+    `thresholds=None` FITS one threshold per level on the data passed in, so the
+    caller passes VAL. A list of thresholds APPLIES them unchanged: that is the
     test path, and the list must be the one fit on val. [LEAKAGE][MUST]
 
     Returns `{"levels": [...], "final_alive_mask": (n,H,W) bool}`, one dict per
     level (coarsest first) with `level`, `n_regions` and `n_alive` (totalled
     over the stack), `frac_alive` (fraction of image area still live),
     `chondrule_retention` (fraction of all TRUE chondrule pixels still inside a
-    live region — the number that decides whether the cascade is usable), and
+    live region, the number that decides whether the cascade is usable), and
     `threshold`. `final_alive_mask` marks the pixels inside regions alive at the
     FINEST level: exactly what a downstream pixel model would have to process.
     """
@@ -515,19 +515,19 @@ def run_cascade_learned(raw, mask, valid, levels=LEVELS, classifiers=None,
                         target_recall=0.999, seed=0):
     """`run_cascade` with a LEARNED per-level drop rule.
 
-    Identical descent semantics — a region is evaluated only if its PARENT
-    survived — but each level's keep/drop decision comes from a
+    Identical descent semantics (a region is evaluated only if its PARENT
+    survived), but each level's keep/drop decision comes from a
     `LevelDropClassifier` over `region_features_rich` rather than one intensity
     percentile against a threshold.
 
-    `classifiers=None` FITS one classifier per level on the data passed in — the
-    caller passes VAL. A list of classifiers APPLIES them frozen — that is the
+    `classifiers=None` FITS one classifier per level on the data passed in, so
+    the caller passes VAL. A list of classifiers APPLIES them frozen: that is the
     test path, and the list must be the one fit on val. [LEAKAGE][MUST]
 
-    Returns the same dict as `run_cascade` — `{"levels": [...],
+    Returns the same dict as `run_cascade`: `{"levels": [...],
     "final_alive_mask": (n,H,W) bool}` with `level`, `n_regions`, `n_alive`,
     `frac_alive`, `chondrule_retention` and `threshold` (here the probability
-    cut) per level — plus `classifiers`, the fitted-or-passed
+    cut) per level, plus `classifiers`, the fitted-or-passed
     `LevelDropClassifier` list to freeze and hand to the test run.
     """
     raw = np.asarray(raw)

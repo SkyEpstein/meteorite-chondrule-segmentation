@@ -2,12 +2,12 @@
 
 Estimates the maximum IoU any model could realistically reach against these
 hand labels. That ceiling is set by boundary fuzziness (small, sparse objects,
-where a 1-2px edge error costs a lot of IoU) and label z-consistency — NOT by
+where a 1-2px edge error costs a lot of IoU) and label z-consistency, NOT by
 model capacity. It answers "how close to IoU = 1 is even possible."
 
 Reproducible: `python -m src.ceiling` writes results/annotation_ceiling.json.
 Computed on the TEST slab (from the frozen split.json). Ignored straddler voxels
-(~2.6%) are not excluded — negligible for this geometric estimate.
+(~2.6%) are not excluded, which is negligible for this geometric estimate.
 """
 from __future__ import annotations
 import json

@@ -1,15 +1,15 @@
 """Karpathy-style autoresearch loop for the chondrule segmenter.
 
-Recipe, in order — each phase is worthless until the previous one passes:
+Recipe, in order. Each phase is worthless until the previous one passes:
 
-* **Phase 0 — sanity / overfit-a-tiny-batch.** If a U-Net cannot drive IoU
-  toward ~1.0 on a handful of FIXED patches it can see over and over, that is a
+* Phase 0: sanity / overfit-a-tiny-batch. If a U-Net cannot drive IoU toward
+  ~1.0 on a handful of FIXED patches it can see over and over, that is a
   *plumbing bug* (loss, valid-mask, LR, architecture), not a tuning problem.
   Diagnosing that is far cheaper than another long training run.
-* **Phase 1 — coarse search at short budgets** over the knobs that actually
-  matter here (LR, loss, patch size, positive-sampling fraction, width).
-* **Phase 2 — successive halving:** promote only the survivors to longer runs.
-* **Phase 3 — train the winner long, then score the test slab ONCE.**
+* Phase 1: coarse search at short budgets over the knobs that actually matter
+  here (LR, loss, patch size, positive-sampling fraction, width).
+* Phase 2: successive halving. Promote only the survivors to longer runs.
+* Phase 3: train the winner long, then score the test slab ONCE.
 
 Leakage discipline is unchanged: every selection decision uses TRAIN/VAL only;
 the test slab is sealed until the final locked model. [LEAKAGE][MUST]
@@ -29,7 +29,7 @@ from .models_cnn import (DEVICE, UNet2D, AttentionUNet2D, PatchSet,
 
 
 # ---------------------------------------------------------------------------
-# Phase 0 — can the net overfit a tiny fixed batch?
+# Phase 0: can the net overfit a tiny fixed batch?
 # ---------------------------------------------------------------------------
 def overfit_batch(make_model, loss_fn, train, n_patches=4, steps=400, lr=1e-3,
                   patch=128, seed=0, log_every=100):
@@ -127,12 +127,12 @@ def phase0(root="."):
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — coarse search.
+# Phase 1: coarse search.
 #
 # Phase 0 proved the net overfits a fixed batch to IoU 1.000, so capacity and
 # step count are NOT the limitation: the gap is generalization. The search
-# space therefore ablates the knobs that fight memorization — augmentation,
-# weight decay, and model width — rather than sweeping capacity/steps.
+# space therefore ablates the knobs that fight memorization (augmentation,
+# weight decay, and model width) rather than sweeping capacity/steps.
 # Ranking is by FULL-validation IoU. The test slab is never touched. [LEAKAGE]
 # ---------------------------------------------------------------------------
 P1_EPOCHS, P1_STEPS, P1_VAL_STRIDE = 6, 250, 6
@@ -160,7 +160,7 @@ def phase1_configs():
         c(name="p1_aug_wd_tversky", aug=True, wd=1e-4, loss="tversky"),
         # Round 2: round 1 showed the FULL augmentation bundle halved val IoU
         # (0.387 -> 0.202). Intensity is the discriminative signal here, so the
-        # jitter is the prime suspect — these isolate geometry-only.
+        # jitter is the prime suspect: these isolate geometry-only.
         c(name="p1_geom_b32", aug="geom"),                       # flips/rot only
         c(name="p1_geom_wd_b32", aug="geom", wd=1e-4),
         c(name="p1_ctrl_wd_b32", wd=1e-4),                       # control + wd
@@ -184,7 +184,7 @@ def run_config(idx, root="."):
 
     # Cached zones: the split is built ONCE by `python -m src.zones`, and only
     # train+val are loaded here. The test zone is never even read during a
-    # search — cheaper in RAM and enforces touch-test-once. [LEAKAGE]
+    # search, which is cheaper in RAM and enforces touch-test-once. [LEAKAGE]
     z = zones.load_zones(root, zones=("train", "val"))
     (Rtr, Mtr, Vtr), (Rv, Mv, Vv) = z["train"], z["val"]
     t0 = time.time()
@@ -204,7 +204,7 @@ def run_config(idx, root="."):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 — train a chosen config at a LONG budget and score the test slab once.
+# Phase 3: train a chosen config at a LONG budget and score the test slab once.
 # ---------------------------------------------------------------------------
 P3_EPOCHS, P3_STEPS = 18, 400          # 7200 steps ~ 4.8x the search budget
 

@@ -30,7 +30,7 @@ def _load(name):
     v = f"results/probs/{name}_val.npy"
     for p in (t, v):
         if not os.path.exists(p):
-            raise FileNotFoundError(f"{p} missing — run the model with save_prob first")
+            raise FileNotFoundError(f"{p} missing: run the model with save_prob first")
     return np.load(v).astype(np.float32), np.load(t).astype(np.float32)
 
 

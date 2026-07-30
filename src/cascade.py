@@ -1,4 +1,4 @@
-"""Tier E — cascade: superpixel GNN coarse map -> pixel-level CNN refinement.
+"""Tier E cascade: superpixel GNN coarse map -> pixel-level CNN refinement.
 
 Stage 1 is the tier-D superpixel GNN: it paints a coarse per-pixel probability
 map whose resolution is capped by the superpixel grid (measured oracle ceiling
@@ -10,7 +10,7 @@ map is a context feature, not the answer.
 Same leakage-free contract as the other tiers, plus one rule specific to a
 cascade:
 
-  * Normalization is ALWAYS ``raw / 255.0`` — inherited from the two stage
+  * Normalization is ALWAYS ``raw / 255.0``, inherited from the two stage
     runners; no statistic is ever estimated from any split. [LEAKAGE][MUST]
   * The aux channel for TRAIN slices is CROSS-FITTED (out-of-fold): the train
     zone is split into two CONTIGUOUS halves (adjacent slices are near
@@ -119,7 +119,7 @@ class CascadeRunner:
         print(f"  [{self.name}] cross-fit halves: A={mid} B={n - mid} slices",
               flush=True)
         # `val` is passed only because GNNRunner.fit wants it for a threshold; the
-        # half-GNNs' thresholds are discarded — only their painted maps are used.
+        # half-GNNs' thresholds are discarded: only their painted maps are used.
         gnn_a = self._make_gnn(f"{self.name}_gnn_A").fit(half_a, val)
         oof_b = gnn_a.predict_proba(half_b["raw"])
         gnn_b = self._make_gnn(f"{self.name}_gnn_B").fit(half_b, val)

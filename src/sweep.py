@@ -1,4 +1,4 @@
-"""v2 broad model sweep — tiers A (non-learned) and B (classical ML).
+"""v2 broad model sweep: tiers A (non-learned) and B (classical ML).
 
 One leaderboard, the identical frozen v1 split, ignore-mask honored, operating
 threshold tuned on validation only and frozen for test. Tier C (CNNs) and

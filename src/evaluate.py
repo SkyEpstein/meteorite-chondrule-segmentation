@@ -50,7 +50,7 @@ def recall_operating_point(prob, mask, valid, min_recall=0.90):
     """Highest-precision threshold that still achieves >= min_recall.
 
     Serves the don't-miss-chondrules goal alongside the max-IoU point. Selected
-    on whatever split the caller passes — pass VAL to keep test untouched.
+    on whatever split the caller passes, so pass VAL to keep test untouched.
     """
     best = None
     for t in np.arange(0.02, 0.99, 0.02):
@@ -84,8 +84,8 @@ def append_leaderboard(entry, path=LEADERBOARD):
 def run_and_score(runner, data=None, root=".", extra=None, save_prob=None):
     """Fit the runner, score test once, append to the leaderboard.
 
-    Returns the leaderboard row (or an {"error": ...} row if the run failed —
-    a single family blowing up must not abort the sweep).
+    Returns the leaderboard row (or an {"error": ...} row if the run failed,
+    because a single family blowing up must not abort the sweep).
     """
     d = data or load(root)
     t0 = time.time()

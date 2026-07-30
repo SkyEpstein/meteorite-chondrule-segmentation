@@ -2,7 +2,7 @@
 
 Given a 2D CT slice, returns an (H, W, F) float32 feature stack. Features are
 classic hand-engineered descriptors that expose intensity, edges, blobs, local
-statistics, oriented texture and ridge/blob structure at several scales — the
+statistics, oriented texture and ridge/blob structure at several scales: the
 signal a threshold alone can't capture.
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Unattended runner for the remaining roadmap stages.
 
-Each stage is independent and wrapped, so one failure cannot abort the rest —
-the point is to wake up to as many completed stages as possible, with honest
+Each stage is independent and wrapped, so one failure cannot abort the rest.
+The point is to wake up to as many completed stages as possible, with honest
 errors recorded for any that failed.
 
 Stages: hierarchy -> cascade -> recall-training bake-off -> two-model
@@ -24,7 +24,7 @@ def best_model_by_val(exclude_prefixes=("matrix_", "rt_")):
 
     `results/leaderboard_all.json` is sorted by TEST IoU (see
     `evaluate.append_leaderboard`), so taking its first row selects a model with
-    test information — which this project's entire premise forbids. Three stages
+    test information, which this project's entire premise forbids. Three stages
     did exactly that. This recomputes the ranking from saved VALIDATION
     probabilities instead.
     """
@@ -170,7 +170,7 @@ def run_recall_training():
 @stage("two_model_veto")
 def run_two_model():
     """Sky's is/is-not pair: a matrix specialist trained on CONFUSABLE matrix
-    (hard negatives), used to veto the chondrule model — not a 1-p inversion."""
+    (hard negatives), used to veto the chondrule model, not a 1-p inversion."""
     from . import evaluate, combine, metrics
     from .models_cnn import UNet2D, CNNRunner, dice_loss
     d = evaluate.load(".")

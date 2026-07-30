@@ -1,1 +1,1 @@
-"""Meteorite chondrule segmentation — v1 evaluation harness."""
+"""Meteorite chondrule segmentation: v1 evaluation harness."""
