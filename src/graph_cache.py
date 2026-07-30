@@ -1,7 +1,7 @@
 """Disk cache for the tier-D superpixel graphs (built ONCE, shared by all GNNs).
 
-Building one slice graph costs ~9.5 s — SLIC plus the 21-channel
-`features.extract_features` stack averaged over every superpixel — and every
+Building one slice graph costs ~9.5 s: SLIC plus the 21-channel
+`features.extract_features` stack averaged over every superpixel. Every
 GNN variant would otherwise redo that identical work on every run. This module
 builds each slice graph once and stores it under `results/graph_cache/`.
 
@@ -9,11 +9,11 @@ Stored per slice (`np.savez_compressed`):
 
   * `x`           node features, float32 (N, Fn)
   * `edge_index`  adjacency in COMPACT COO form, int32 (2, E), both directions
-                  kept — never a dense N x N matrix (N ~ 6000 per slice)
+                  kept, never a dense N x N matrix (N ~ 6000 per slice)
   * `labels`      superpixel id map, int16 (H, W); N < 32767 at N_SEGMENTS=6000
                   so int16 is exact and halves the file size versus int32
 
-Only RAW slices enter graph construction here — no mask and no VALID mask — so
+Only RAW slices enter graph construction here (no mask and no VALID mask), so
 the cache is exactly what `predict_proba` would have computed and adds no
 leakage path. [LEAKAGE]
 
@@ -79,7 +79,7 @@ def load_cached(zone, i):
     p = cache_path(zone, i)
     if not os.path.exists(p):
         raise FileNotFoundError(
-            f"{p} missing — run `python -m src.graph_cache` to build the graph cache")
+            f"{p} missing: run `python -m src.graph_cache` to build the graph cache")
     d = np.load(p)
     return (d["x"].astype(np.float32),
             d["edge_index"].astype(np.int32),

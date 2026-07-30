@@ -1,17 +1,17 @@
 """Model combination, cross-slice z-refinement, and a learned confidence model.
 
 Three roadmap items share one file because they share one discipline: every
-parameter here — a veto threshold, a blend weight, a z-window, the confidence
-meta-model itself — is FIT OR SELECTED ON VALIDATION ONLY and then frozen for
+parameter here (a veto threshold, a blend weight, a z-window, the confidence
+meta-model itself) is FIT OR SELECTED ON VALIDATION ONLY and then frozen for
 the test slab. Nothing in this module may be tuned on test. [LEAKAGE][MUST]
 
-1. **Two-model combinations** — recall-specialist + matrix-veto, weighted
+1. Two-model combinations: recall-specialist + matrix-veto, weighted
    probability average, disagreement/agreement maps, and a logistic-regression
    stacker over the two models' probabilities.
-2. **Cross-slice z-refinement** — kept-slices are ordered along z and adjacent
+2. Cross-slice z-refinement: kept-slices are ordered along z and adjacent
    slices place chondrules almost identically (measured adjacent-slice label
    IoU ~0.83), so smoothing/voting along z is real signal, not blur.
-3. **`ConfidenceModel`** — a meta-model trained on the base model's own
+3. `ConfidenceModel`: a meta-model trained on the base model's own
    mistakes that emits a per-pixel trust map, judged by risk-coverage
    (selective prediction).
 
@@ -28,8 +28,8 @@ from . import metrics
 # Extends far below 0.05 on purpose. The over-predict-then-prune pipeline needs
 # very high recall, and with dice loss under ~95% background the useful
 # operating points sit near zero. A grid starting at 0.05 made
-# `recall_threshold` silently fall back to its minimum for every target >= 0.90
-# — so a "recall 1.00" experiment actually measured recall 0.69 and three
+# `recall_threshold` silently fall back to its minimum for every target >= 0.90,
+# so a "recall 1.00" experiment actually measured recall 0.69 and three
 # different targets returned identical results.
 THR_GRID = np.concatenate([
     np.arange(0.0002, 0.005, 0.0004),
@@ -93,7 +93,7 @@ def fit_combo_average(prob_a_val, prob_b_val, mask_val, valid_val):
 
 
 def disagreement_map(prob_a, prob_b):
-    """|prob_a - prob_b| — where the two models most disagree."""
+    """|prob_a - prob_b|: where the two models most disagree."""
     return np.abs(prob_a - prob_b).astype(np.float32)
 
 
@@ -114,7 +114,7 @@ def combo_stack(prob_a, prob_b, mask, valid, max_px=300_000, seed=0):
 
     Fit on at most `max_px` VALID pixels, balanced chondrule/matrix.
 
-    [LEAKAGE][MUST] Fit on VALIDATION pixels only — the stacker's weights are
+    [LEAKAGE][MUST] Fit on VALIDATION pixels only. The stacker's weights are
     a tuned parameter like any threshold, and fitting them on test would leak.
 
     Returns the fitted sklearn estimator (apply it with `apply_stack`).
@@ -144,8 +144,8 @@ def z_smooth(prob, k=3, mode="mean"):
     """Smooth the probability volume along z (axis 0) ONLY, window `k` (odd).
 
     modes: "mean" (average), "median" (robust to a single bad slice), "min"
-    (conservative — a pixel only survives if the whole z-window is confident)
-    and "max" (inclusive — recall-oriented). Edges use replicate padding so
+    (conservative, a pixel only survives if the whole z-window is confident)
+    and "max" (inclusive, recall-oriented). Edges use replicate padding so
     every window holds k values. Returns a same-shape float32 volume.
     """
     if k % 2 == 0:
@@ -170,7 +170,7 @@ def z_agreement(prob, thr, k=3):
 
     1.0 = the whole z-window calls this pixel the same way; low values flag
     slice-to-slice flicker. Replicate padding keeps the denominator at k at the
-    volume ends. Returns (n,H,W) float32 in [0,1] — a confidence signal.
+    volume ends. Returns (n,H,W) float32 in [0,1], a confidence signal.
     """
     b = (np.asarray(prob) >= thr).astype(np.float32)
     frac_pos = ndi.uniform_filter1d(b, size=k, axis=0, mode="nearest")
@@ -227,19 +227,19 @@ class ConfidenceModel:
 
         F = 11 confidence features, in order:
           0  prob      the base model's probability itself
-          1  margin    |prob - 0.5| — distance from the decision boundary; the
-                       model's errors concentrate near it
-          2  z_agree   z_agreement(prob, thr, k) — do the neighboring slices
+          1  margin    |prob - 0.5|, the distance from the decision boundary;
+                       the model's errors concentrate near it
+          2  z_agree   z_agreement(prob, thr, k): do the neighboring slices
                        binarize this pixel the same way?
-          3  z_mean    z_smooth(prob, k, "mean") — the z-neighborhood's mean
+          3  z_mean    z_smooth(prob, k, "mean"), the z-neighborhood's mean
                        probability
           4  pmean5    local mean of prob, 5x5 in-plane window
-          5  pstd5     local std of prob, 5x5 — a contested neighborhood
+          5  pstd5     local std of prob, 5x5 (a contested neighborhood)
           6  pmean11   local mean of prob, 11x11 in-plane window
           7  pstd11    local std of prob, 11x11
           8  raw       raw CT intensity / 255
           9  rmean5    local mean of raw intensity, 5x5
-         10  rstd5     local std of raw intensity, 5x5 — texture/edge proxy
+         10  rstd5     local std of raw intensity, 5x5 (texture/edge proxy)
 
         Local statistics use `scipy.ndimage.uniform_filter` with a (1, w, w)
         footprint, so only features 2-3 look across z.
@@ -264,7 +264,7 @@ class ConfidenceModel:
         which violates the project's memory rule. Each window is expanded by a
         halo of k//2 slices and the halo rows are then dropped, so the two
         z-dependent features (z_agreement, z_smooth) see exactly the neighbors
-        they would in a full-volume pass — the output is identical, the peak
+        they would in a full-volume pass. The output is identical, the peak
         memory is not. At the true volume ends the halo is clipped, which
         reproduces the replicate padding the full-volume path uses.
         """
@@ -280,8 +280,8 @@ class ConfidenceModel:
         """Learn where the base model is right: y = ((prob >= thr) == mask),
         over VALID pixels only.
 
-        [LEAKAGE][MUST] The caller fits this on VALIDATION-zone predictions —
-        a zone the base model never trained on. Fitting it on train-zone
+        [LEAKAGE][MUST] The caller fits this on VALIDATION-zone predictions,
+        from a zone the base model never trained on. Fitting it on train-zone
         predictions would be dishonest: the base model memorizes train, so
         nearly every train pixel is "correct" and the confidence model would
         learn a mistake distribution that exists nowhere else. Once fit, the
@@ -352,7 +352,7 @@ class ConfidenceModel:
 
 
 # ---------------------------------------------------------------------------
-# 4. Learned ERROR model (spec R12) — regression, not classification
+# 4. Learned ERROR model (spec R12): regression, not classification
 # ---------------------------------------------------------------------------
 
 class ErrorModel:
@@ -361,7 +361,7 @@ class ErrorModel:
     Sibling to `ConfidenceModel`, and deliberately different:
 
       * `ConfidenceModel` is a CLASSIFIER on `(prob >= thr) == gt`. Its answer
-        depends on the operating threshold and is binary — "trust / don't".
+        depends on the operating threshold and is binary: "trust / don't".
       * `ErrorModel` is a REGRESSOR on the residual `|prob - gt|`. It is
         threshold-INDEPENDENT and returns an expected error magnitude, i.e. an
         error bar. That is what lets you rank whole slices or chondrules by how
@@ -453,14 +453,14 @@ class ErrorModel:
 
     @staticmethod
     def aggregate(pred_err, axis_slices=True):
-        """Per-slice mean predicted error — ranks slices for human review."""
+        """Per-slice mean predicted error: ranks slices for human review."""
         if axis_slices:
             return pred_err.reshape(pred_err.shape[0], -1).mean(axis=1)
         return float(pred_err.mean())
 
 
 # ---------------------------------------------------------------------------
-# 4b. False-positive detector — the CORRECT target for pruning
+# 4b. False-positive detector: the CORRECT target for pruning
 # ---------------------------------------------------------------------------
 
 class FPDetector:
@@ -472,7 +472,7 @@ class FPDetector:
       * `ErrorModel` regresses ``|prob - gt|``. At a high-recall threshold every
         probability is small, so a TRUE positive (gt=1, prob~0.1) has residual
         ~0.9 while a FALSE positive (gt=0, prob~0.1) has residual ~0.1. The
-        signal is INVERTED for pruning — measured on the GNN: mean predicted
+        signal is INVERTED for pruning. Measured on the GNN: mean predicted
         error 0.331 on TPs vs 0.259 on FPs, so pruning "high error" deletes
         chondrules. That is why every prune experiment returned ~zero gain
         despite the error model itself being sound (Spearman 0.767 vs true
@@ -595,7 +595,7 @@ def fit_prune(prob_val, mask_val, valid_val, score_map_val, thr_recall,
 
 def _synthetic(n=12, H=64, W=80, seed=0):
     """A bright disk drifting along z (ground truth) plus noisy probability
-    maps of it — a chondrule-shaped toy volume with known answers."""
+    maps of it: a chondrule-shaped toy volume with known answers."""
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:H, 0:W]
     mask = np.zeros((n, H, W), bool)
@@ -632,7 +632,7 @@ def _selftest():
     assert np.isfinite(viou), viou
     print(f"  combo_veto    thr_a={ta:.2f} thr_veto={tv:.2f} val IoU={viou:.4f}   OK")
 
-    # NOTE: this fits and scores the trust model on the SAME toy volume — a
+    # NOTE: this fits and scores the trust model on the SAME toy volume. It is a
     # smoke test of the plumbing, not an honest confidence evaluation.
     cm = ConfidenceModel().fit(prob, raw, mask, valid, thr=0.5)
     trust = cm.predict(prob, raw, 0.5)
@@ -645,7 +645,7 @@ def _selftest():
     cov = [r["coverage"] for r in rc]
     assert all(b > a for a, b in zip(cov, cov[1:])), cov
     # IoU is legitimately NaN at low coverage. Pixels sorted by trust descending
-    # are background-dominated (matrix is the large majority of every slice —
+    # are background-dominated (matrix is the large majority of every slice:
     # ~91% in this toy volume, ~95% in the real data), so the most-trusted
     # fraction can contain no foreground at all: empty union -> undefined IoU,
     # per metrics.iou. That is a property of the ranking, not a defect, so the
@@ -666,7 +666,7 @@ def _selftest():
           f"mean pred={ev['mean_predicted_error']:.3f} vs actual="
           f"{ev['mean_actual_error']:.3f}   OK")
 
-    # FPDetector — the one mechanism every reported prune number flows through.
+    # FPDetector: the one mechanism every reported prune number flows through.
     # Guards the two lines that distinguish it from ConfidenceModel: the
     # restriction to predicted-positive pixels, and the polarity of the label
     # (1 == false positive). A polarity flip here silently reproduces the
@@ -679,7 +679,7 @@ def _selftest():
     assert sc.shape == prob.shape and 0.0 <= sc.min() and sc.max() <= 1.0, sc.shape
     assert sc[fp_sel].mean() > sc[tp_sel].mean(), (
         f"FPDetector polarity inverted: P(FP)={sc[fp_sel].mean():.3f} on FPs vs "
-        f"{sc[tp_sel].mean():.3f} on TPs — pruning would delete true positives")
+        f"{sc[tp_sel].mean():.3f} on TPs, so pruning would delete true positives")
     fpf = fit_prune(prob, mask, valid, sc, thr_fp, higher_is_worse=True)
     assert fpf["val_iou"] >= fpf["unpruned_val_iou"] - 1e-9, fpf
     print(f"  FPDetector    P(FP) on FP={sc[fp_sel].mean():.3f} > on TP="

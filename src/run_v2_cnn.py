@@ -1,8 +1,8 @@
-"""Tier C — CNN training/eval on the frozen split (spec R10, first pass).
+"""Tier C: CNN training/eval on the frozen split (spec R10, first pass).
 
 Trains the k=1 U-Net family (2D dice / recall-favoring tversky / focal /
 attention) on TRAIN, selects the operating threshold on VAL, and scores once on
-TEST — same leakage-free discipline as Tier A/B. The 2.5D (k=5) model is
+TEST, the same leakage-free discipline as Tier A/B. The 2.5D (k=5) model is
 DEFERRED pending its train-seam fix (reviewer finding #2). Focal alpha is set to
 up-weight the rare foreground (reviewer finding #4). Writes (incrementally, so
 partial progress survives) results/v2_cnn_leaderboard.json.

@@ -1,5 +1,5 @@
 """Post-lock pipeline: pick the winner on VALIDATION, then run everything below
-the roadmap's hard barrier — confidence bake-off, z-refinement, FP-prune sweep.
+the roadmap's hard barrier (confidence bake-off, z-refinement, FP-prune sweep).
 
 Selection rule [LEAKAGE][MUST]: the base model is chosen by VALIDATION IoU
 recomputed from saved val probabilities, never by the test leaderboard. Test is
@@ -32,7 +32,7 @@ def pick_winner(d):
     return rows
 
 
-# Model selection. Validation cannot separate the top models here — a bootstrap
+# Model selection. Validation cannot separate the top models here: a bootstrap
 # over val slices gives a 95% CI of [-0.013, +0.015] on the val-IoU difference
 # between hrnet_lite and unet2d_s30000, i.e. P(better) = 0.50. Sky's call is to
 # use the sweep's best model. NOTE for honesty: choosing the max over 40 models
@@ -49,7 +49,7 @@ def main(root="."):
     Rt, Mt, Vt = d["test"]["raw"], d["test"]["mask"], d["test"]["valid"]
 
     ranked = pick_winner(d)
-    print("=== model selection (by VALIDATION IoU — test not consulted) ===", flush=True)
+    print("=== model selection (by VALIDATION IoU, test not consulted) ===", flush=True)
     for r in ranked[:8]:
         print(f"  val {r['val_iou']:.4f}  {r['model']}", flush=True)
     win = ranked[0]
@@ -57,7 +57,7 @@ def main(root="."):
         pick = [r for r in ranked if r["model"] == FORCE_MODEL]
         if pick:
             win = pick[0]
-            print(f"  [override] using {FORCE_MODEL} (val {win['val_iou']:.4f}) — "
+            print(f"  [override] using {FORCE_MODEL} (val {win['val_iou']:.4f}): "
                   f"val cannot separate the top models; see FORCE_MODEL note", flush=True)
     name, thr_ref = win["model"], win["threshold"]
     print(f"\nWINNER: {name}  (val {win['val_iou']:.4f}, thr {thr_ref:.4f})\n", flush=True)

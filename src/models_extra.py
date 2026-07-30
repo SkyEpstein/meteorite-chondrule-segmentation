@@ -5,7 +5,7 @@ into ``CNNRunner`` in ``src/models_cnn.py``. Every net obeys the same contract:
 
   * ``__init__(self, in_ch=1, base=32)``
   * ``forward(x)`` with ``x`` of shape ``(B, in_ch, H, W)`` float
-  * returns raw LOGITS of shape ``(B, 1, H, W)`` — no sigmoid inside forward.
+  * returns raw LOGITS of shape ``(B, 1, H, W)``, with no sigmoid inside forward.
 
 H and W are arbitrary (>= 64) and are NOT assumed divisible by any stride: every
 net that downsamples either reflect-pads to a multiple of its total stride and
@@ -304,7 +304,7 @@ class DeepLabV3P(nn.Module):
 # 8. Plain conv autoencoder (deliberately NO skip connections).
 # ---------------------------------------------------------------------------
 class SegAutoencoder(nn.Module):
-    """Encoder-decoder with no skips at all — the U-Net contrast case.
+    """Encoder-decoder with no skips at all: the U-Net contrast case.
 
     Three stride-2 conv downs (widths base, base*2, base*4) and three
     transpose-conv ups, then a 1x1 conv to one logit. The input is reflect
@@ -363,7 +363,7 @@ class ConvLSTMSeg(nn.Module):
 
     The input (B, K, H, W) is consumed as K timesteps of 1-channel images by a
     ConvLSTM cell of hidden width ``base``; the FINAL hidden state feeds a small
-    2-conv head and a 1x1 conv to one logit. Intended for k>1 (2.5D) use — with
+    2-conv head and a 1x1 conv to one logit. Intended for k>1 (2.5D) use. With
     ``in_ch == 1`` it degenerates to a sequence of length 1. No downsampling, so
     any H, W passes through unchanged.
     """

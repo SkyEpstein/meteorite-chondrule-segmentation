@@ -1,4 +1,4 @@
-"""Tier D — alternative message-passing schemes for the superpixel graph.
+"""Tier D: alternative message-passing schemes for the superpixel graph.
 
 Six drop-in alternatives to the 3-layer GCN in ``models_gnn``. Every class here
 obeys that model's contract, so any of them plugs straight into
@@ -8,15 +8,15 @@ obeys that model's contract, so any of them plugs straight into
   * ``forward(x, a_norm)`` with ``x`` of shape ``(N, in_dim)`` float and
     ``a_norm`` the SAME coalesced torch sparse COO tensor that
     ``models_gnn.normalized_adjacency`` hands to ``GCN.forward``
-    (D^-1/2 (A + I) D^-1/2 — self-loops already included)
-  * returns raw LOGITS of shape ``(N, 1)`` — no sigmoid inside forward.
+    (D^-1/2 (A + I) D^-1/2, self-loops already included)
+  * returns raw LOGITS of shape ``(N, 1)``, with no sigmoid inside forward.
 
 Plain torch sparse ops only (``torch.sparse.mm`` / ``index_add_``): no
 torch_geometric, and no dense N x N intermediate is ever materialized (N ~ 6000
 nodes per slice, so one dense adjacency would be ~144 MB).
 
 Because the adjacency carries self-loops, every "neighborhood" here includes
-the node itself — that is a property of the fixed input contract, not a choice
+the node itself. That is a property of the fixed input contract, not a choice
 made per model.
 
 Normalization is GroupNorm (``models_cnn._norm``) exactly as in the GCN
@@ -63,7 +63,7 @@ def _agg_adj(a_norm, mean):
 
 
 # ---------------------------------------------------------------------------
-# 1. GAT — attention over existing edges only.
+# 1. GAT: attention over existing edges only.
 # ---------------------------------------------------------------------------
 class GATLayer(nn.Module):
     """Multi-head attention computed over the EXISTING edges of `a_norm` only.
@@ -136,7 +136,7 @@ class GAT(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 2. GraphSAGE — mean aggregator with a separate self transform.
+# 2. GraphSAGE: mean aggregator with a separate self transform.
 # ---------------------------------------------------------------------------
 class SAGELayer(nn.Module):
     """h_i' = W1 h_i + W2 * mean_{j in N(i)} h_j + b."""
@@ -174,7 +174,7 @@ class GraphSAGE(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 3. GIN — sum aggregator with a learnable eps and an MLP per layer.
+# 3. GIN: sum aggregator with a learnable eps and an MLP per layer.
 # ---------------------------------------------------------------------------
 class GINLayer(nn.Module):
     """h_i' = MLP((1 + eps) h_i + sum_{j in N(i)} h_j), eps LEARNABLE per layer.
@@ -216,7 +216,7 @@ class GIN(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 4. ChebNet — spectral filters of Chebyshev order K.
+# 4. ChebNet: spectral filters of Chebyshev order K.
 # ---------------------------------------------------------------------------
 class ChebLayer(nn.Module):
     """Chebyshev filter of order K on the normalized adjacency `L_hat`.
@@ -261,10 +261,10 @@ class ChebNet(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 5. ResGCN — 6 layers deep, residual + pre-normalized (does depth help here?).
+# 5. ResGCN: 6 layers deep, residual + pre-normalized (does depth help here?).
 # ---------------------------------------------------------------------------
 class ResGCNLayer(nn.Module):
-    """x + A_norm @ (ReLU(norm(x)) W) + b — residual with PRE-normalization."""
+    """x + A_norm @ (ReLU(norm(x)) W) + b, residual with PRE-normalization."""
 
     def __init__(self, dim):
         super().__init__()
@@ -296,10 +296,10 @@ class ResGCN(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 6. GraphUNetLite — gPool / gUnpool encoder-decoder with skip connections.
+# 6. GraphUNetLite: gPool / gUnpool encoder-decoder with skip connections.
 # ---------------------------------------------------------------------------
 def _restrict(a_norm, idx, n):
-    """A[idx][:, idx] on the SPARSE COO tensor — nothing is ever densified.
+    """A[idx][:, idx] on the SPARSE COO tensor: nothing is ever densified.
 
     Edges survive only when BOTH endpoints are kept; the endpoints are then
     renumbered into the pooled node ordering.
@@ -380,7 +380,7 @@ class GraphUNetLite(nn.Module):
 # Configured roster.
 # ---------------------------------------------------------------------------
 def gnn_models():
-    """{name: class} — every entry is a drop-in `GNNRunner(model_cls=...)`."""
+    """{name: class}, where every entry is a drop-in `GNNRunner(model_cls=...)`."""
     return {
         "gat": GAT,
         "graphsage": GraphSAGE,

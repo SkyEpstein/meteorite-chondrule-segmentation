@@ -1,55 +1,54 @@
-# Project Constitution — Meteorite Chondrule Segmentation
+# Project Constitution: Meteorite Chondrule Segmentation
 
-**Version 0.2 · 2026-07-23 · Owner: Sky Epstein**
+Version 0.4. 2026-07-29. Owner: Sky Epstein.
 
 ## Mission
-Automatically locate **chondrules** (rocky/silicate inclusions) in meteorite
-micro-CT scans by assigning every pixel a **calibrated probability of
-chondrule vs. matrix**. First sample: Allan Hills 83010 (**ALH 83010**).
-Success = the best model found by a **leakage-free sweep**, judged primarily by
-**foreground (chondrule) Intersection-over-Union (IoU)** on a spatially
-held-out region — so that unlabeled scans and regions can be segmented without
-hand annotation. Secondary goals: **prioritize recall** (miss as few chondrules
-as possible) and **quantify prediction confidence** so users know where to trust
-the model.
+Automatically locate chondrules (rocky/silicate inclusions) in meteorite micro-CT
+scans by assigning every pixel a **calibrated probability of chondrule vs.
+matrix**. First sample: Allan Hills 83010 (ALH 83010). Success = the best model
+found by a leakage-free sweep, judged primarily by foreground (chondrule)
+Intersection-over-Union (IoU) on a spatially held-out region, so that unlabeled
+scans and regions can be segmented without hand annotation. Secondary goals:
+prioritize recall (miss as few chondrules as possible) and quantify prediction
+confidence so users know where to trust the model.
 
 ## Scope
-**In scope:** binary semantic segmentation (chondrule vs. not) on 2D CT slices
-of one meteorite; a broad, *locally runnable* sweep across **all model
-families** — classical thresholding, classical-ML on texture features, and the
-**full neural-network range** (pixel-MLP, patch-CNN, U-Net / U-Net++ / attention
-/ dilated, encoder–decoder with pretrained backbone, FCN / SegNet / DeepLabV3+,
+**In scope:** binary semantic segmentation (chondrule vs. not) on 2D CT slices of
+one meteorite. The sweep is broad and *locally runnable*, and it covers all model
+families: classical thresholding, classical-ML on texture features, the full
+neural-network range (pixel-MLP, patch-CNN, U-Net / U-Net++ / attention /
+dilated, encoder-decoder with pretrained backbone, FCN / SegNet / DeepLabV3+,
 transformer segmenters like SegFormer / TransUNet, ConvLSTM/ConvGRU over the
-z-axis, reconstruction autoencoder) and a **superpixel GNN**; **two-model
-combinations** (recall-specialist + matrix-veto, disagreement, diverse
-ensemble); a **learned confidence model** trained on the CV models' own mistakes
-(a trust map, in the spirit of the REE-logD confidence approach); a
-**cross-slice z-consistency** confidence/refinement; a spatial hold-out
-evaluation; and application to the unlabeled slices of this scan.
+z-axis, reconstruction autoencoder), and a superpixel GNN. Also in scope:
+two-model combinations (recall-specialist + matrix-veto, disagreement, diverse
+ensemble); a learned confidence model trained on the CV models' own mistakes (a
+trust map, in the spirit of the REE-logD confidence approach); a cross-slice
+z-consistency confidence/refinement; a spatial hold-out evaluation; and
+application to the unlabeled slices of this scan.
 
 **Out of scope (for now):** instance separation of individual chondrules;
 mineral-species classification (the labels do not encode species); any
 cross-meteorite generalization claim; and any model that cannot run on the local
-Mac — heavy / pretrained / transformer models are attempted when feasible and
+Mac. Heavy / pretrained / transformer models are attempted when feasible and
 otherwise **listed as excluded with the reason** (no silent caps).
 
 ## Data (ground truth)
-- One micro-CT volume — 531 slices, 1450×962, 8-bit grayscale
+- One micro-CT volume: 531 slices, 1450×962, 8-bit grayscale
   (`ALH83010_z_crop_every4/`), every 4th slice of a ~2120-slice scan.
 - Paired hand annotation (`ALH83010_z_crop_every4_labeled/`), 8-bit, where each
   integer > 0 marks an individual chondrule instance. **For this project all
   values > 0 collapse to the single positive class "chondrule".**
-- **Annotated region = contiguous central band ≈ slices 100–496.** The end runs
-  (≈ 1–99 and 497–530) are treated as **UNLABELED / unknown — never as
-  negatives** — and used only as inference targets.
-- Chondrules are **denser (brighter) than matrix** in CT (mean ≈ 50 vs. 32),
-  so raw intensity carries real signal.
-- `BP.CSV` in the project root is an unrelated hydrocarbon table — ignore it.
+- **Annotated region = contiguous central band ≈ slices 100 to 496.** The end
+  runs (≈ 1 to 99 and 497 to 530) are treated as UNLABELED / unknown, **never as
+  negatives**, and used only as inference targets.
+- Chondrules are denser (brighter) than matrix in CT (mean ≈ 50 vs. 32), so raw
+  intensity carries real signal.
+- `BP.CSV` in the project root is an unrelated hydrocarbon table. Ignore it.
 
 ## Tech stack
-Python (Anaconda) · numpy · tifffile · scikit-image · scikit-learn ·
-PyTorch (Apple-MPS) for deep models (2D / 2.5D / transformer / GNN where
-feasible) · matplotlib.
+Python (Anaconda), numpy, tifffile, scikit-image, scikit-learn, PyTorch
+(Apple-MPS) for deep models (2D / 2.5D / transformer / GNN where feasible), and
+matplotlib.
 **Local Mac only** (CPU / MPS), no cloud dependency. Reproducible: pinned
 environment, fixed seeds, split saved to disk.
 
@@ -57,13 +56,13 @@ environment, fixed seeds, split saved to disk.
 1. **Leakage-free split.** Train / val / test are **contiguous z-slabs, never
    random slices.** A buffer gap (12 kept-slices ≈ 48 original slices) separates
    slabs to prevent *near-duplicate* leakage between adjacent slices. Zero
-   chondrule straddling is then **guaranteed at the label level** by resolving
-   every chondrule that spans a seam to the slab holding most of its voxels and
-   ignoring its voxels elsewhere — verified independently by a same-id
+   chondrule straddling is then guaranteed at the label level by resolving every
+   chondrule that spans a seam to the slab holding most of its voxels and
+   ignoring its voxels elsewhere. That is verified independently by a same-id
    connected-component recount (0 straddlers, ~2.6% of positives ignored). The
    split is deterministic and saved to disk. *(Known, measured caveat for
-   learned models: a resolved chondrule's raw pixels remain visible — unlabeled
-   — in the ≥48-slice-distant neighbor slab; v2 quantifies this with a
+   learned models: a resolved chondrule's raw pixels remain visible, though
+   unlabeled, in the ≥48-slice-distant neighbor slab; v2 quantifies this with a
    drop-straddlers-entirely ablation.)*
 2. **Touch test once.** All tuning and model selection happen on validation; the
    test slab is scored only for the final locked-model report.
@@ -80,74 +79,116 @@ environment, fixed seeds, split saved to disk.
 7. **Reproducibility.** Seeds fixed; environment pinned; splits, thresholds, and
    metrics written to disk with every run.
 8. **SDD every change.** Each change gets a spec note (problem / approach /
-   acceptance), a verification pass, and a CHANGELOG entry — scaled to size.
+   acceptance), a verification pass, and a CHANGELOG entry, scaled to size.
 9. **Over-predict, then prune (Sky, 2026-07-23).** Errors are asymmetric: a
    missed chondrule is **unrecoverable** (nothing downstream can restore a
    region the model never proposed), while a false positive is **fixable** by
    the confidence/error meta-models. So the base model's operating point is
-   chosen for **high recall**, and precision is recovered by pruning
-   low-confidence / high-predicted-error pixels. The max-IoU threshold is kept
-   only as a reference point, and "over-predict then prune" must be measured
-   head-to-head against it rather than assumed better.
-10. **Human-in-the-loop search.** Model search runs in **short rounds**, never as
-   a long autonomous loop. Each round reports its **scores and exactly what was
+   chosen for high recall, and precision is recovered by pruning low-confidence
+   / high-predicted-error pixels. The max-IoU threshold is kept only as a
+   reference point, and "over-predict then prune" must be measured head-to-head
+   against it rather than assumed better.
+10. **Human-in-the-loop search.** Model search runs in short rounds, never as a
+   long autonomous loop. Each round reports its **scores and exactly what was
    changed to produce them**, then waits for Sky's steer before the next round.
 11. **Respect the machine.** Training/search must fit in RAM without swapping:
    the split is computed once and cached (`src/zones.py`), workers load only the
    zones they need (never test during a search), and concurrency defaults to
    **2 workers**. Four workers each rebuilding the split (~7 GB each) swamped
    the Mac on 2026-07-23.
+12. **The complete model (Sky, 2026-07-29).** From this point forward "the
+   complete model" names exactly one thing, the ordered composition of four
+   pluggable stages: (0) the best base segmenter for the hierarchy, at a
+   high-recall operating point, then (1) the hierarchy filter, then (2) the
+   learned confidence model, then (3) z-layer neighbor confidence. Its headline
+   number is end-to-end test foreground IoU against the
+   plain-U-Net-at-matched-budget baseline, and every stage must be ablatable so
+   that a stage which does not earn its place is visible rather than assumed.
+   This is an **architecture contract, not a performance claim**: at today's
+   data volume (MDE 0.0142 IoU at n=19 val chondrules) the stages are
+   individually indistinguishable from break-even. The hierarchy measured
+   -0.012, *inside* that floor, and is justified on compute (2.41× at target
+   recall 0.999), not accuracy. No stage may hard-code ALH 83010; the entry
+   point stays `run_all(sources)` over `MeteoriteSource` so more meteorites are
+   an argument, not a code change.
+   Full spec: [`specs/2026-07-29-complete-model-contract/spec.md`](../specs/2026-07-29-complete-model-contract/spec.md).
+
+13. **Writing style (Sky, 2026-07-29).** Every word in this repository follows
+   [`style.md`](style.md): no em dashes, no emoji, no arrows or middot
+   separators, no en dashes or Unicode minus, and none of the machine-writing
+   tells (bold and italic spam, empty rule-of-three lists, "not X but Y" used as
+   a flourish rather than a real technical contrast, paragraph-restating final
+   sentences, filler vocabulary, throat-clearing). This covers docs, specs, code
+   comments and docstrings, human-readable message strings, figure titles,
+   commit messages and pull request descriptions. The voice stays blunt,
+   specific and self-critical, and is not to be flattened into corporate
+   neutral. **A style edit may never change a fact:** no number, path, code
+   symbol, claim, caveat, retraction or status label may change to improve flow,
+   and no caveat may be deleted to make prose read better. After any style pass,
+   verify mechanically that the file's numeric tokens are unchanged.
+
+14. **Attribution and commits (Sky, 2026-07-29).** Sky is the sole author of
+   record. **No commit, pull request, README, doc, spec or code comment may
+   credit an AI assistant:** no `Co-Authored-By` for any model, no "Generated
+   with" line, no AI attribution anywhere. If such a trailer is found in
+   existing history, report it and offer to rewrite it. Commit and author as
+   **SkyEpstein** in this repository, and confirm the active `gh` account before
+   pushing. Ask Sky what the commit message should say and use exactly his
+   wording. Every code commit updates `CHANGELOG.md`. Commit messages obey
+   principle 13, so no em dashes there either.
 
 ## Roadmap
-**The canonical, detailed roadmap lives in [`ROADMAP.md`](../ROADMAP.md)** —
-per-stage status, measured findings, dependencies, and the bugs caught along the
-way. Keep it current; the session task list is ephemeral and must not be the
-only record. The summary below is the high-level arc only.
+**The canonical, detailed roadmap lives in [`ROADMAP.md`](../ROADMAP.md)**: it
+carries per-stage status, measured findings, dependencies, and the bugs caught
+along the way. Keep it current; the session task list is ephemeral and must not
+be the only record. The summary below is the high-level arc only.
 
-- **v0** ✅ Data audit & frozen leakage-free split.
-- **v1** ✅ Evaluation harness (metrics) + classical baseline.
-- **Audits** ✅ eval + split independently confirmed leakage-free.
-- **v2 Tier A/B** ✅ thresholds + classical-ML sweep (best IoU 0.203).
-- **Annotation ceiling** ✅ measured (~0.85–0.92; IoU ≈1 not reachable).
-- **v2 Tier C** — CNNs (2D / 2.5D / attention U-Net); fix deferred items
+- **v0** (done) Data audit & frozen leakage-free split.
+- **v1** (done) Evaluation harness (metrics) + classical baseline.
+- **Audits** (done) eval + split independently confirmed leakage-free.
+- **v2 Tier A/B** (done) thresholds + classical-ML sweep (best IoU 0.203).
+- **Annotation ceiling** (done) measured (~0.85 to 0.92; IoU ≈1 not reachable).
+- **v2 Tier C**: CNNs (2D / 2.5D / attention U-Net); fix deferred items
   (2.5D train-seam, `pos_weight`, focal α, regression tests).
-- **v2 Tier C+** — all remaining NN families (MLP, patch-CNN, U-Net++, dilated,
+- **v2 Tier C+**: all remaining NN families (MLP, patch-CNN, U-Net++, dilated,
   ResNet-UNet, FCN/SegNet, DeepLabV3+, SegFormer/TransUNet, ConvLSTM over z,
   autoencoder).
-- **v2 Tier D** — superpixel GNN + variants (GAT, GraphSAGE, GIN, ChebNet,
+- **v2 Tier D**: superpixel GNN + variants (GAT, GraphSAGE, GIN, ChebNet,
   ResGCN, GraphUNet), sharing one cached graph.
-- **v2 Tier E — cascade (Sky):** GNN coarse regions → pixel-level CNN
+- **v2 Tier E, cascade (Sky):** GNN coarse regions, then pixel-level CNN
   refinement, with the painted GNN map as a second input channel. The output is
   pixel-level, so this escapes the ~0.878 superpixel quantization ceiling that
   binds pure-GNN methods. Train-time GNN channels MUST be **cross-fitted**
-  (out-of-fold) — a base model's predictions on its own training data are
+  (out-of-fold), because a base model's predictions on its own training data are
   memorized and would teach the refiner to over-trust a channel that degrades
   at test time. Judged against both a plain CNN and the GNN alone.
-- **Two-model combinations** — build all three; keep the val-winner.
+- **Two-model combinations**: build all three; keep the val-winner.
 - **Recall-optimized operating point** + straddler-drop ablation.
-- **v3** — Cross-slice z-refinement (neighbor-agreement confidence).
-- **v3+** — Learned confidence model (meta-model on the CV models' mistakes; a
+- **v3**: Cross-slice z-refinement (neighbor-agreement confidence).
+- **v3+**: Learned confidence model (meta-model on the CV models' mistakes; a
   calibrated trust map).
-- **v3+b** — **Confidence bake-off (Sky).** Runs **only after the base model is
-  locked**: a confidence model fits its base model's specific error
-  distribution, so the winner can change with the base model — running the
-  bake-off early would tune it to failure modes the final system does not have.
-  The meta-model is then chosen by a recorded bake-off, never by picking the
-  first thing that works: several
-  estimator families (gradient boosting, random forest, extra trees, linear,
-  small MLP) for BOTH the trust-classifier and error-regressor tasks, ranked on
-  validation. The bake-off MUST include the **free baselines** — `|p-0.5|`, the
-  raw probability, and z-agreement — because a learned confidence model that
-  cannot beat a zero-cost signal has not earned its complexity, and that result
-  is reported rather than hidden. Ranked primarily by **downstream pruned IoU**
-  (the quantity that matters), with ranking quality (AUROC / Spearman) reported
-  alongside.
-- **v3++** — **Learned error model** (Sky, proven on the REE-logD work): a
-  *regression* meta-model predicting the **magnitude of the base model's error**
-  per pixel, and aggregated per slice / per chondrule. Distinct from the trust
-  classifier above — it is threshold-independent and yields an expected-error
+- **v3+b**: Confidence bake-off (Sky). Runs only after the base model is locked,
+  because a confidence model fits its base model's specific error distribution,
+  so the winner can change with the base model. Running the bake-off early would
+  tune it to failure modes the final system does not have. The meta-model is
+  then chosen by a recorded bake-off, never by picking the first thing that
+  works: several estimator families (gradient boosting, random forest, extra
+  trees, linear, small MLP) for BOTH the trust-classifier and error-regressor
+  tasks, ranked on validation. The bake-off MUST include the free baselines
+  (`|p-0.5|`, the raw probability, and z-agreement), because a learned
+  confidence model that cannot beat a zero-cost signal has not earned its
+  complexity, and that result is reported rather than hidden. Ranked primarily
+  by **downstream pruned IoU** (the quantity that matters), with ranking quality
+  (AUROC / Spearman) reported alongside.
+- **v3++**: Learned error model (Sky, proven on the REE-logD work). A
+  *regression* meta-model predicting the magnitude of the base model's error per
+  pixel, and aggregated per slice / per chondrule. It is distinct from the trust
+  classifier above: it is threshold-independent and yields an expected-error
   value (an error bar) rather than a correct/incorrect probability. Trained on
   VALIDATION-zone predictions only; judged by predicted-vs-actual error
   correlation and by whether it beats the classifier at selective prediction.
-- **v4** — Apply the best model to the unlabeled slices; deliver probability
+- **v3+++**: The complete model (§12). Compose stages 0 to 3 in
+  `pipeline_v2.run_all`, score end-to-end with per-stage ablations, and carry the
+  contract unchanged onto the larger multi-meteorite dataset.
+- **v4**: Apply the best model to the unlabeled slices; deliver probability
   maps + confidence.

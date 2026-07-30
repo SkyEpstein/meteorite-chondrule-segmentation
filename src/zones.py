@@ -1,4 +1,4 @@
-"""Cached zone loader — memory-efficient access to the frozen split.
+"""Cached zone loader: memory-efficient access to the frozen split.
 
 `split.build_split()` is deterministic but expensive in RAM: it materializes a
 full-resolution int32 instance-label volume (~2.2 GB) *twice* (build + verify)
@@ -7,7 +7,7 @@ costing ~4.4 GB each and pushed the machine into swap.
 
 This module computes it ONCE, caches the per-zone valid masks to disk, and lets
 workers load only the zones they actually need. Search workers load
-("train", "val") — the test zone is never even read during a search, which is
+("train", "val"). The test zone is never even read during a search, which is
 also the right default for the touch-test-once rule. [LEAKAGE]
 
 Build the cache:  python -m src.zones
@@ -41,7 +41,7 @@ def load_zones(root=".", zones=("train", "val"), path=CACHE):
     """
     full = os.path.join(root, path)
     if not os.path.exists(full):
-        raise FileNotFoundError(f"{full} missing — run `python -m src.zones` first")
+        raise FileNotFoundError(f"{full} missing: run `python -m src.zones` first")
     d = np.load(full)
     raw_paths, lab_paths = data.list_pairs(root)
     out = {}

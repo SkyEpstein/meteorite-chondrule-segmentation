@@ -7,6 +7,6 @@ tifffile==2023.4.12
 matplotlib==3.9.2
 Pillow==10.4.0
 
-# Deep models (Tier C). torch's build is platform-specific — install the right
+# Deep models (Tier C). torch's build is platform-specific, so install the right
 # wheel from https://pytorch.org (Apple-MPS on this Mac). Left unpinned on purpose.
 torch
