@@ -67,6 +67,12 @@ environment, fixed seeds, split saved to disk.
    drop-straddlers-entirely ablation.)*
 2. **Touch test once.** All tuning and model selection happen on validation; the
    test slab is scored only for the final locked-model report.
+   DECLARED EXCEPTION 2026-07-31: the paper audit under `Audits of Other Papers/`
+   scored the frozen test slab (band slices 160-239) roughly twenty times while
+   measuring split protocols, and published that this window is unusually hard
+   (5.9th percentile of 238 interior windows). No project model or
+   hyperparameter was selected using any of it, and the frozen split must NOT be
+   relocated in response. See `Audits of Other Papers/spec.md` confound C8.
 3. **Honest negatives.** Un-annotated regions are never used as negative labels;
    only the annotated band supplies ground truth.
 4. **Baseline first.** A classical intensity/morphology baseline is built and

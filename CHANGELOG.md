@@ -45,6 +45,102 @@ project. Honest numbers only; evaluation regime stated with every metric.
 
 
 
+### 2026-07-31: Audit of external papers and their split protocols
+
+New directory `Audits of Other Papers/` holding a spec, a paper corpus, a
+dataset comparison, a protocol-reconstruction harness, five result JSONs, a
+generated tables.md and four figures. The report's experimental tables are generated from the JSONs by
+`06_tables.py`; prose figures quoted inline were checked against those tables
+after an overseer pass caught one stale hand-typed row.
+
+**Literature.** No published deep-learning chondrule segmentation work exists.
+Searched the meteoritics and planetary-science journals, NASA ADS, arXiv,
+EarthArXiv and the LPSC and Meteoritical Society abstract archives. Nearest
+prior art is Griffin, Elangovan, Mundell and Hezel (2012), semi-automated
+local-histogram segmentation of meteorite micro-CT, 85.8% percent-correct
+against 73.4% for pixel intensity. One LPSC 2024 abstract is a possible
+counterexample and is flagged UNVERIFIED rather than suppressed.
+
+**Corpus.** Ten external works with a stated task and split audited in depth, inside a wider corpus of 21 dossiers, split protocols quoted verbatim where the text
+allowed. Of the ten external works with a stated task and split, five split
+randomly at image, patch or crop level, three never state the fold level, and two
+group by sample or session; seven of the ten give no
+usable specimen count. Amer et al.
+2025 is mechanically certain to leak: 72 rotational views per crystal split with
+`sklearn.train_test_split`, which has no grouping argument.
+
+**Measured leakage on ALH 83010, no model trained.** Under random tile, slice
+and overlapping-patch protocols, 100% of test chondrules and 100% of test
+positive pixels belong to objects also in training. Contiguous zones without a
+buffer: 51.6%. Buffer 12 alone: 19.9%. Buffer plus straddler resolution: 0 of 43
+chondrules, 0.0%. This is the first independent confirmation that the straddler
+mechanism in `src/split.py` was load-bearing rather than defensive.
+
+**Crossed protocol x architecture grid**, 24 cells at an identical 3,000-step
+budget. For the headline pair (random slices against the leakage-free reference)
+the gap was 0.0803 IoU, sd 0.0056 across three architectures, about 40% relative.
+Not every random protocol beat every contiguous one cell-by-cell: U-Net random
+tiles (0.2369) scored below U-Net zones-plus-buffer-12 (0.2417), which the tile
+inference handicaps in spec C5 explain.
+
+**RETRACTED by replication.** That gap does not survive. Rerunning the same pair
+over four split draws and four contiguous test windows gives +0.0290 IoU, 95% CI
+[-0.1210, +0.1789], and +0.0173 [-0.0563, +0.0908] in gain-over-control terms.
+Both intervals span zero. The leakage-free arm's sd is 0.0988 because test-window
+choice dominates: its raw score ranges 0.1306 to 0.3688 across windows. For three
+of the four windows the fixed-intensity control tracks that closely; for the
+fourth it does not (independent sweep 0.1988 at the 82.8th percentile against a
+control of 0.0507), which looks like threshold-transfer instability from a
+validation zone at the sparse band edge rather than region difficulty. The grid's
+reference window sat at the 5.9th percentile of 238 interior windows. Direction is
+positive in both replication metrics; magnitude is unestablished on N=1
+meteorite. The crossed grid also pointed positive in every architecture, but that
+is three measurements of one split draw, not independent evidence.
+
+**Buffer sweep null.** Seven buffers from 4 to 84 original slices of separation,
+fixed test zone and fixed train size: mean 0.2129, sd 0.0085, correlation with
+buffer +0.215. No detectable proximity effect, even though the training positive
+fraction fell 30.8% across the sweep. The specified claim that this sweep was
+confound-free is RETRACTED in the spec (R6, A3) rather than deleted.
+
+**Second inflation channel found in the data.** Validation and test agree to
+within 0.0141 IoU under random splits but differ by 0.144 to 0.170 under the three
+contiguous ones.
+A paper that splits contiguously and quotes validation performance overstates its
+held-out result by that much with no training leakage involved. Relevant to Nath
+et al. 2025, which reports 93% as a validation accuracy.
+
+**Constitution exception, principle 2.** The audit's zone protocols test on band slices
+160-239, which is the project's frozen test slab, and scored it roughly twenty times. It
+also publishes that this window is unusually hard (0.1344 for a fixed rule, the 5.9th
+percentile of 238 interior windows). No project model or hyperparameter was selected using
+any of it, and the frozen split must not be relocated in response. Declared as spec
+confound C8 and cross-referenced from `memory/constitution.md`.
+
+**Self-audit.** This project's own headline is a four-significant-figure,
+best-of-40 number carrying 0.02 to 0.03 selection bias against a 0.0142 IoU
+minimum detectable effect at n = 19, and the repository records it as both 0.3168 and 0.31601. It should be
+reported as about 0.32 with an interval.
+
+**Corrections to circulating citations**, all recorded in `papers.md` rather than
+applied silently: the closest prior work was returned by literature search as
+"Grimm and Woolum (2011)", which is fabricated (Crossref gives Griffin et al.
+2012); Kapoor and Narayanan is Patterns 4(9) article 100804, not 4(8) 100859;
+Kattenborn et al. is ISPRS Open Journal 10.1016/j.ophoto.2022.100018, not
+Environmental Research Letters; Floyd et al. is MAPS 59(10) 2769-2788, not
+volume 109. The widely repeated "up to 40% more optimistic" figure attributed to
+Roberts et al. 2017 could not be found in the source across two attempts and is
+NOT used. MudrockNet's published paper and its own arXiv preprint report
+different per-class IoU values.
+
+**Two defects found in the audit's own code by adversarial verification and
+fixed:** the diagnostics were not applying the straddler valid mask, so the
+leakage-free reference was scored as if it still leaked 19.9%; and a guard
+returned a smaller training set instead of raising. Four limits could not be
+fixed and are declared in the spec as C1, C2, C5 and the R6/A3 retraction, including that
+tile-arm inflation is a lower bound because those arms carry measured inference
+handicaps.
+
 ### 2026-07-23 — Full model sweep, budget curve, confidence pipeline
 
 **Headline: best test IoU 0.3168** (`unet2d_s30000` — a plain 2D U-Net trained

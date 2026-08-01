@@ -1,0 +1,111 @@
+{
+  "band_slices": 397,
+  "crop": [
+    768,
+    1280
+  ],
+  "n_chondrule_instances": 142,
+  "unit_sizes": {
+    "train": 213,
+    "val": 60,
+    "test": 80
+  },
+  "protocols": {
+    "P-tile-random": {
+      "label": "random tile/patch split",
+      "kind": "tile",
+      "straddler_resolution": false,
+      "voxels_removed_by_straddler_resolution": 0,
+      "n_instances_in_test": 140,
+      "shared_instances_train_and_test": 140,
+      "shared_instance_frac_of_test": 1.0,
+      "test_positive_pixels": 5590437,
+      "test_pos_frac_from_shared_chondrules": 1.0,
+      "min_z_gap": 0,
+      "median_z_gap": 0.0,
+      "adjacent_test_frac": 0.9783333333333334,
+      "overlap_test_frac": 0.0,
+      "mean_overlap_area_frac": 0.0,
+      "n_test_units": 1200,
+      "n_train_units": 3195
+    },
+    "P-patch-random-overlap": {
+      "label": "random overlapping patches",
+      "kind": "tile",
+      "straddler_resolution": false,
+      "voxels_removed_by_straddler_resolution": 0,
+      "n_instances_in_test": 139,
+      "shared_instances_train_and_test": 139,
+      "shared_instance_frac_of_test": 1.0,
+      "test_positive_pixels": 6390391,
+      "test_pos_frac_from_shared_chondrules": 1.0,
+      "min_z_gap": 0,
+      "median_z_gap": 0.0,
+      "adjacent_test_frac": 0.0,
+      "overlap_test_frac": 0.8966087675765095,
+      "mean_overlap_area_frac": 0.4808343697298057,
+      "n_test_units": 1209,
+      "n_train_units": 3219
+    },
+    "P-slice-random": {
+      "label": "random image (slice) split",
+      "kind": "slice",
+      "straddler_resolution": false,
+      "voxels_removed_by_straddler_resolution": 0,
+      "n_instances_in_test": 141,
+      "shared_instances_train_and_test": 141,
+      "shared_instance_frac_of_test": 1.0,
+      "test_positive_pixels": 5402318,
+      "test_pos_frac_from_shared_chondrules": 1.0,
+      "min_z_gap": 1,
+      "median_z_gap": 1.0,
+      "adjacent_test_frac": 0.8,
+      "within_4_test_frac": 1.0
+    },
+    "P-zone-nobuffer": {
+      "label": "contiguous zones, no buffer",
+      "kind": "slice",
+      "straddler_resolution": false,
+      "voxels_removed_by_straddler_resolution": 0,
+      "n_instances_in_test": 51,
+      "shared_instances_train_and_test": 27,
+      "shared_instance_frac_of_test": 0.5294117647058824,
+      "test_positive_pixels": 6032154,
+      "test_pos_frac_from_shared_chondrules": 0.5156660456613011,
+      "min_z_gap": 1,
+      "median_z_gap": 20.5,
+      "adjacent_test_frac": 0.025,
+      "within_4_test_frac": 0.1
+    },
+    "P-zone-buffer": {
+      "label": "contiguous zones, buffer 12, no straddler fix",
+      "kind": "slice",
+      "straddler_resolution": false,
+      "voxels_removed_by_straddler_resolution": 0,
+      "n_instances_in_test": 51,
+      "shared_instances_train_and_test": 8,
+      "shared_instance_frac_of_test": 0.1568627450980392,
+      "test_positive_pixels": 6032154,
+      "test_pos_frac_from_shared_chondrules": 0.1993952740596477,
+      "min_z_gap": 13,
+      "median_z_gap": 52.5,
+      "adjacent_test_frac": 0.0,
+      "within_4_test_frac": 0.0
+    },
+    "P-zone-buffer-straddler": {
+      "label": "contiguous zones, buffer 12 + straddler resolution (this project's reference)",
+      "kind": "slice",
+      "straddler_resolution": true,
+      "voxels_removed_by_straddler_resolution": 688834,
+      "n_instances_in_test": 43,
+      "shared_instances_train_and_test": 0,
+      "shared_instance_frac_of_test": 0.0,
+      "test_positive_pixels": 5878730,
+      "test_pos_frac_from_shared_chondrules": 0.0,
+      "min_z_gap": 13,
+      "median_z_gap": 52.5,
+      "adjacent_test_frac": 0.0,
+      "within_4_test_frac": 0.0
+    }
+  }
+}

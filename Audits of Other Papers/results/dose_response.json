@@ -1,0 +1,109 @@
+{
+  "regime": "buffer dose-response; test zone FIXED at band slices 160-239 and train size FIXED at 197 slices for every point. NOT confound-free: train positive fraction falls monotonically with buffer (see train_pos_frac per point), collinear with the treatment, so proximity and training-foreground collapse cannot be separated here; budget 3000 steps; U-Net; centered 768x1280 crop; no straddler resolution at any point (buffer is the only lever under test); N=1 meteorite",
+  "budget_steps": 3000,
+  "train_size": 197,
+  "test_zone_band": [
+    160,
+    239
+  ],
+  "points": [
+    {
+      "buffer": 0,
+      "min_z_gap_band_slices": 1,
+      "min_gap_original_slices": 4,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.07475158897955002,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.207136417316216,
+      "test_dice": 0.34318642755677126,
+      "test_precision": 0.262545141984772,
+      "test_recall": 0.4953272081581472,
+      "threshold": 0.2
+    },
+    {
+      "buffer": 2,
+      "min_z_gap_band_slices": 3,
+      "min_gap_original_slices": 12,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.07137162003622038,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.21360875299907062,
+      "test_dice": 0.35202243304722475,
+      "test_precision": 0.25473816072482425,
+      "test_recall": 0.5695225950796349,
+      "threshold": 0.2
+    },
+    {
+      "buffer": 4,
+      "min_z_gap_band_slices": 5,
+      "min_gap_original_slices": 20,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.0680488186237574,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.20432584359614356,
+      "test_dice": 0.3393198687591426,
+      "test_precision": 0.23810028552734283,
+      "test_recall": 0.590237749235182,
+      "threshold": 0.002
+    },
+    {
+      "buffer": 8,
+      "min_z_gap_band_slices": 9,
+      "min_gap_original_slices": 36,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.061508875812975886,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.2138513261754237,
+      "test_dice": 0.3523517609841426,
+      "test_precision": 0.24885537259009655,
+      "test_recall": 0.6032281337644895,
+      "threshold": 0.2
+    },
+    {
+      "buffer": 12,
+      "min_z_gap_band_slices": 13,
+      "min_gap_original_slices": 52,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.057001352068131346,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.22826653017597667,
+      "test_dice": 0.37168892022690286,
+      "test_precision": 0.2673118113598545,
+      "test_recall": 0.6097954395726635,
+      "threshold": 0.1
+    },
+    {
+      "buffer": 16,
+      "min_z_gap_band_slices": 17,
+      "min_gap_original_slices": 68,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.05429680270793676,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.21781730501255356,
+      "test_dice": 0.35771753959483804,
+      "test_precision": 0.24733762302699502,
+      "test_recall": 0.6460169949242012,
+      "threshold": 0.002
+    },
+    {
+      "buffer": 20,
+      "min_z_gap_band_slices": 21,
+      "min_gap_original_slices": 84,
+      "n_train": 197,
+      "budget_steps": 3000,
+      "train_pos_frac": 0.0517109672430203,
+      "test_pos_frac": 0.07670280456542969,
+      "test_iou": 0.2049482360250435,
+      "test_dice": 0.3401776605792448,
+      "test_precision": 0.24146475066060857,
+      "test_recall": 0.5754105415743697,
+      "threshold": 0.006
+    }
+  ]
+}

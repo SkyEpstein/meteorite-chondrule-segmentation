@@ -1,6 +1,11 @@
-# Large user-provided micro-CT data (kept out of git)
+# Large user-provided micro-CT data (kept out of git).
+# Patterns are repeated without the trailing slash so that SYMLINKS to the data
+# are ignored too: a worktree links the data in rather than copying it, and git
+# treats a symlink as a file, which a directory-only pattern does not match.
 ALH83010_z_crop_every4/
 ALH83010_z_crop_every4_labeled/
+ALH83010_z_crop_every4
+ALH83010_z_crop_every4_labeled
 BP.CSV
 
 # Generated figures & verbose run logs (regenerable)
@@ -21,3 +26,7 @@ split_cache.npz
 __pycache__/
 *.pyc
 .DS_Store
+
+# audit run logs (regenerable; every reported number lives in the JSON results)
+audit_run.log
+audit_smoke.log

@@ -1,0 +1,170 @@
+{
+  "regime": "replication of the headline pair; U-Net at 3000 steps; leaky arm = P-slice-random over 4 split seeds; leakage-free arm = zone+buffer12+straddler over 4 contiguous test windows; both arms score full-slice inputs so the inference path is matched; centered 768x1280 crop; N=1 meteorite",
+  "budget_steps": 3000,
+  "runs": [
+    {
+      "arm": "leaky_slice_random",
+      "variant": 0,
+      "budget_steps": 3000,
+      "test_iou": 0.29961792556500405,
+      "test_dice": 0.4610861695136227,
+      "test_precision": 0.36526408177234565,
+      "test_recall": 0.6250629822235566,
+      "threshold": 0.25,
+      "otsu_test_iou": 0.14627301456845412,
+      "gain_over_otsu": 0.15334491099654993,
+      "train_pos_frac": 0.06777299812328834,
+      "test_pos_frac": 0.06869402567545572
+    },
+    {
+      "arm": "leaky_slice_random",
+      "variant": 1,
+      "budget_steps": 3000,
+      "test_iou": 0.2690472152890739,
+      "test_dice": 0.4240145079673621,
+      "test_precision": 0.318706176110189,
+      "test_recall": 0.6332587047566272,
+      "threshold": 0.5,
+      "otsu_test_iou": 0.1371880024288294,
+      "gain_over_otsu": 0.1318592128602445,
+      "train_pos_frac": 0.07140226886492566,
+      "test_pos_frac": 0.06562697092692057
+    },
+    {
+      "arm": "leaky_slice_random",
+      "variant": 2,
+      "budget_steps": 3000,
+      "test_iou": 0.2765444772340727,
+      "test_dice": 0.4332704142565717,
+      "test_precision": 0.32052510718768673,
+      "test_recall": 0.6683712559711648,
+      "threshold": 0.5,
+      "otsu_test_iou": 0.1435655471925118,
+      "gain_over_otsu": 0.13297893004156092,
+      "train_pos_frac": 0.06788523976978189,
+      "test_pos_frac": 0.06749749501546223
+    },
+    {
+      "arm": "leaky_slice_random",
+      "variant": 3,
+      "budget_steps": 3000,
+      "test_iou": 0.22096735114034255,
+      "test_dice": 0.36195456157605926,
+      "test_precision": 0.25984282743701775,
+      "test_recall": 0.5962761984155732,
+      "threshold": 0.2,
+      "otsu_test_iou": 0.13155986126225713,
+      "gain_over_otsu": 0.08940748987808542,
+      "train_pos_frac": 0.06788283274953541,
+      "test_pos_frac": 0.058694559733072915
+    },
+    {
+      "arm": "clean_zone_straddler",
+      "variant": -60,
+      "budget_steps": 3000,
+      "test_iou": 0.13057668914276577,
+      "test_dice": 0.23099129921345288,
+      "test_precision": 0.13453484335685073,
+      "test_recall": 0.8161159202519922,
+      "threshold": 0.018000000000000002,
+      "otsu_test_iou": 0.05073162774521594,
+      "gain_over_otsu": 0.07984506139754982,
+      "train_pos_frac": 0.07467134144384537,
+      "test_pos_frac": 0.09518469492594402
+    },
+    {
+      "arm": "clean_zone_straddler",
+      "variant": 0,
+      "budget_steps": 3000,
+      "test_iou": 0.21319972102486592,
+      "test_dice": 0.3514668151172385,
+      "test_precision": 0.24741275857149914,
+      "test_recall": 0.6065719976933793,
+      "threshold": 0.01,
+      "otsu_test_iou": 0.13568567335619106,
+      "gain_over_otsu": 0.07751404766867487,
+      "train_pos_frac": 0.05081289467490708,
+      "test_pos_frac": 0.07475191752115885
+    },
+    {
+      "arm": "clean_zone_straddler",
+      "variant": 60,
+      "budget_steps": 3000,
+      "test_iou": 0.3687973096880786,
+      "test_dice": 0.5388632883448903,
+      "test_precision": 0.48500392889545396,
+      "test_recall": 0.6061790649957813,
+      "threshold": 0.5,
+      "otsu_test_iou": 0.18706151551883174,
+      "gain_over_otsu": 0.18173579416924687,
+      "train_pos_frac": 0.042077106601195714,
+      "test_pos_frac": 0.11422199249267578
+    },
+    {
+      "arm": "clean_zone_straddler",
+      "variant": 120,
+      "budget_steps": 3000,
+      "test_iou": 0.2377402997768573,
+      "test_dice": 0.3841521518200832,
+      "test_precision": 0.31988358223178487,
+      "test_recall": 0.4807384557559083,
+      "threshold": 0.5,
+      "otsu_test_iou": 0.13828489840553962,
+      "gain_over_otsu": 0.09945540137131767,
+      "train_pos_frac": 0.05269876160718652,
+      "test_pos_frac": 0.08416978200276692
+    }
+  ],
+  "summary": {
+    "test_iou": {
+      "leaky": {
+        "n": 4,
+        "mean": 0.2665442423071233,
+        "sd": 0.03305243866451083,
+        "min": 0.22096735114034255,
+        "max": 0.29961792556500405
+      },
+      "clean": {
+        "n": 4,
+        "mean": 0.2375785049081419,
+        "sd": 0.09876253437103508,
+        "min": 0.13057668914276577,
+        "max": 0.3687973096880786
+      },
+      "difference": 0.028965737398981423,
+      "difference_se": 0.0520732702474627,
+      "welch_df": 3.6636816306233166,
+      "t_critical_95": 2.8799087762408395,
+      "interval_method": "Welch t, unpaired difference of means, n=4 per arm",
+      "difference_ci95": [
+        -0.1210005305942474,
+        0.17893200539221024
+      ]
+    },
+    "gain_over_otsu": {
+      "leaky": {
+        "n": 4,
+        "mean": 0.1268976359441102,
+        "sd": 0.026873585501663647,
+        "min": 0.08940748987808542,
+        "max": 0.15334491099654993
+      },
+      "clean": {
+        "n": 4,
+        "mean": 0.10963757615169731,
+        "sd": 0.049062357404089874,
+        "min": 0.07751404766867487,
+        "max": 0.18173579416924687
+      },
+      "difference": 0.01726005979241288,
+      "difference_se": 0.02797009345605534,
+      "welch_df": 4.65148138437177,
+      "t_critical_95": 2.629607397990105,
+      "interval_method": "Welch t, unpaired difference of means, n=4 per arm",
+      "difference_ci95": [
+        -0.05629030488210486,
+        0.09081042446693062
+      ]
+    }
+  }
+}
