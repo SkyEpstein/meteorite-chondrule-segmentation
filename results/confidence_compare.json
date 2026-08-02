@@ -1,0 +1,114 @@
+{
+  "mde_iou": 0.0142,
+  "recall_target": 0.99,
+  "rows": [
+    {
+      "model": "unet2d_s30000",
+      "graded_frac_val": 0.01191795110760628,
+      "base_thr": 0.0029727045121893583,
+      "base_test_iou": 0.29442699427623614,
+      "recall_target": 0.99,
+      "recall_thr": 2.1384691999823743e-07,
+      "recall_achieved_val": 0.9909994868238707,
+      "recall_target_unreachable": false,
+      "overpredicted_val_iou": 0.06661387391947766,
+      "winner": "margin",
+      "winner_task": "free",
+      "winner_pruned_val_iou": 0.43807083994230245,
+      "base_val_iou": 0.44517639424817795,
+      "gain_vs_base_val": -0.0071055543058755055,
+      "winner_cutoff": -0.5,
+      "winner_ranking_metric": 0.8740196183157546,
+      "winner_unpruned_val_iou": 0.06661387391947766,
+      "best_error_model": {
+        "name": "ridge",
+        "pruned_val_iou": 0.06661388275400658
+      },
+      "best_trust_classifier": {
+        "name": "hist_gb",
+        "pruned_val_iou": 0.06661387391947766
+      },
+      "best_free_baseline": {
+        "name": "margin",
+        "pruned_val_iou": 0.43807083994230245
+      },
+      "error_beats_trust": true,
+      "error_beats_free": false,
+      "pruned_test_iou": 0.30278824149718325,
+      "gain_vs_base_test": 0.00836124722094711,
+      "base_test_metrics": {
+        "iou": 0.29442699427623614,
+        "dice": 0.4549147933072295,
+        "precision": 0.37282081345867696,
+        "recall": 0.5833713427451607,
+        "tp": 3431574.0,
+        "fp": 5772778.0,
+        "fn": 2450741.0,
+        "auprc": 0.3093720136885468
+      },
+      "pruned_test_metrics": {
+        "iou": 0.30278824149718325,
+        "dice": 0.46483109357698005,
+        "precision": 0.40370019242784705,
+        "recall": 0.5477794031771505,
+        "tp": 3222211.0,
+        "fp": 4759482.0,
+        "fn": 2660104.0
+      }
+    },
+    {
+      "model": "unet2d_s30000_auggeom",
+      "graded_frac_val": 0.009195497885153057,
+      "base_thr": 0.0007248407671437371,
+      "base_test_iou": 0.2436196201722574,
+      "recall_target": 0.99,
+      "recall_thr": 1e-07,
+      "recall_achieved_val": 0.9355089511347872,
+      "recall_target_unreachable": true,
+      "overpredicted_val_iou": 0.06428604540627214,
+      "winner": "margin",
+      "winner_task": "free",
+      "winner_pruned_val_iou": 0.4532167335233073,
+      "base_val_iou": 0.4609223651989769,
+      "gain_vs_base_val": -0.007705631675669566,
+      "winner_cutoff": -0.5,
+      "winner_ranking_metric": 0.8551724034250483,
+      "winner_unpruned_val_iou": 0.06428604540627214,
+      "best_error_model": {
+        "name": "random_forest",
+        "pruned_val_iou": 0.06429900438923715
+      },
+      "best_trust_classifier": {
+        "name": "hist_gb",
+        "pruned_val_iou": 0.06428604540627214
+      },
+      "best_free_baseline": {
+        "name": "margin",
+        "pruned_val_iou": 0.4532167335233073
+      },
+      "error_beats_trust": true,
+      "error_beats_free": false,
+      "pruned_test_iou": 0.2460844000173584,
+      "gain_vs_base_test": 0.0024647798451009895,
+      "base_test_metrics": {
+        "iou": 0.2436196201722574,
+        "dice": 0.39179121368077635,
+        "precision": 0.302189451639017,
+        "recall": 0.5569239321593624,
+        "tp": 3276002.0,
+        "fp": 7564886.0,
+        "fn": 2606313.0,
+        "auprc": 0.2307504170463291
+      },
+      "pruned_test_metrics": {
+        "iou": 0.2460844000173584,
+        "dice": 0.3949722827987099,
+        "precision": 0.32002827905971915,
+        "recall": 0.5157503465897355,
+        "tp": 3033806.0,
+        "fp": 6446000.0,
+        "fn": 2848509.0
+      }
+    }
+  ]
+}

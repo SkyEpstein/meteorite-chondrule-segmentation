@@ -1,0 +1,53 @@
+{
+  "regime": "classical Stage-0; fit on TRAIN, threshold selected on VAL, TEST scored once per arm; N=1 meteorite (ALH 83010)",
+  "quick": false,
+  "rows": [
+    {
+      "iou": 0.20282888250950082,
+      "dice": 0.33725309636119205,
+      "precision": 0.24861527732596556,
+      "recall": 0.5241130405291115,
+      "tp": 3082998.0,
+      "fp": 9317680.0,
+      "fn": 2799317.0,
+      "auprc": 0.24279850504127598,
+      "threshold": 0.7999999999999999,
+      "graded_frac_val": 0.3062233612923268,
+      "arm": "base18",
+      "fit_sec": 1342.9
+    },
+    {
+      "iou": 0.21267957715848496,
+      "dice": 0.35075972443904674,
+      "precision": 0.2910034805677175,
+      "recall": 0.4413990070235953,
+      "tp": 2596448.0,
+      "fp": 6325947.0,
+      "fn": 3285867.0,
+      "auprc": 0.2798913755134716,
+      "threshold": 0.85,
+      "graded_frac_val": 0.30649361961430927,
+      "arm": "plus3",
+      "fit_sec": 1793.8
+    },
+    {
+      "iou": 0.21848510517251576,
+      "dice": 0.3586176051640486,
+      "precision": 0.3209240976202876,
+      "recall": 0.4063439309183544,
+      "tp": 2390243.0,
+      "fp": 5057758.0,
+      "fn": 3492072.0,
+      "auprc": 0.2798913755134716,
+      "threshold": 0.85,
+      "graded_frac_val": 0.30649361961430927,
+      "arm": "plus3_ws",
+      "watershed": {
+        "min_distance": 8,
+        "min_size": 64,
+        "n_labels_test": 22375
+      },
+      "fit_sec": 0.0
+    }
+  ]
+}

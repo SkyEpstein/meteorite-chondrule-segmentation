@@ -21,3 +21,9 @@ split_cache.npz
 __pycache__/
 *.pyc
 .DS_Store
+
+logs/
+
+# model checkpoints (regenerable, large)
+results/checkpoints/
+*.pt

@@ -12,7 +12,7 @@ band.
 > annotation ceiling is **~0.85–0.92** (±1–2 px boundary tolerance), so IoU near
 > 1.0 is not reachable against hand-drawn labels.
 >
-> **⚠️ Read the KNOWN ISSUES block at the top of [CHANGELOG.md](CHANGELOG.md) first — 0.3168 and 0.3214 do NOT reproduce under the committed code (they predate a threshold-grid fix), and 0.3214 was selected on test, not validation.**
+> **⚠️ 0.3168 AND 0.3214 ARE BOTH WITHDRAWN — read the KNOWN ISSUES block at the top of [CHANGELOG.md](CHANGELOG.md) before quoting anything here.** Three separate reasons: (1) they predate a threshold-grid fix; (2) 0.3214 was selected on **test**, not validation; and (3) **every CNN-family score was produced by a defective inference tiler** that accumulated its halo instead of cropping it. Retraining the headline model under the fixed tiler gives **test IoU 0.29409** (Dice 0.455, precision 0.372, recall 0.584, AUPRC 0.427) — **−0.0218** against the reproducible 0.31587. Note AUPRC *rose* 0.0755, so the map's ranking improved while IoU at the operating point fell. A residual tile-boundary artifact remains (37–201× the median jump at tile edges) and is documented, not fixed. The headline above is left unchanged deliberately: the retrained number is itself a tiled-inference number and the artifact is still open.
 >
 > **Other caveats:**
 > - **Best-of-40, selection-biased.** The winner was picked from a 40-model
@@ -40,7 +40,7 @@ band.
 
 | Model | IoU | note |
 |---|---|---|
-| **`unet2d_s30000`** | **0.3168** | plain U-Net, 30k steps — best |
+| **`unet2d_s30000`** | ~~0.3168~~ **0.29409** | plain U-Net, 30k steps — best. 0.3168 is WITHDRAWN (defective tiler + stale threshold grid); 0.29409 is the retrain under the fixed tiler. Every other row below is still a pre-fix number. |
 | `unet2d_s15000` | 0.3089 | same model, 15k steps |
 | `long_p1_ctrl_b32` | 0.2834 | same model, 7.2k steps |
 | `hrnet_lite` | 0.2598 | best of 40 architectures at a fixed 3k budget |
@@ -51,7 +51,8 @@ band.
 | intensity threshold | 0.130 | non-learned floor |
 
 **Training budget beat architecture.** The same U-Net at 3k / 7.2k / 15k / 30k
-steps scores 0.2314 / 0.2834 / 0.3089 / 0.3159 — gains halve each doubling and
+steps scores 0.2314 / 0.2834 / 0.3089 / ~~0.3159~~ — **all four WITHDRAWN** (they
+predate the tiler fix; the 30k point re-scores to 0.29409). Gains halve each doubling and
 have now plateaued. No architecture at a fixed budget came close.
 
 Annotation ceiling (`results/annotation_ceiling.json`): ±1px 0.92, ±2px 0.85,
@@ -65,7 +66,7 @@ adjacent-slice 0.83.
 | Evaluation harness + classical baseline | done — 0.130 floor, 0.203 classical ML |
 | Annotation ceiling | done — ~0.92 (±1px), ~0.85 (±2px) |
 | Architecture sweep (36 configs: CNNs, 4 from-scratch transformers, 6 modern conv, 7 GNNs) | done — 41 leaderboard rows |
-| Budget-scaling curve (3k → 30k steps) | done — plateaued at 0.3159 |
+| Budget-scaling curve (3k → 30k steps) | **needs re-running** — every point predates the tiler fix; only the 30k point has been re-scored (0.29409), so the curve now mixes regimes |
 | Hierarchical superpixel cascade | done — 2.71x compute saving at 99.9% retention |
 | GNN → CNN cascade | done — 0.2025, below a plain CNN |
 | Confidence bake-off (10 learned + 4 free baselines) | done — nothing beat a free baseline by more than +0.0005 |
@@ -75,6 +76,21 @@ adjacent-slice 0.83.
 | Straddler-drop ablation | **incomplete — one arm only** |
 | Apply to the ~130 unlabeled slices (v4) | **not done — model weights were never persisted** |
 | Regression tests | **not done — `tests/` is empty** |
+| Model checkpointing (`save_checkpoint`/`load_checkpoint`) | done — verified bit-identical reload; threshold travels with the weights |
+| Multi-meteorite pipeline (`src/pipeline_v2.py`) | **plumbing only** — split self-test passes (13 straddlers resolved, 0 chondrules span 2+ zones), but `run_all` has never been executed and has no caller |
+| Corrected data-scaling test (`src/data_scaling.py`) | **stopped at 1 of 12 runs, not running** (frac 0.25, test IoU 0.2823). Two earlier attempts produced nothing usable. The partial `results/data_scaling_v2.json` is deliberately uncommitted: `n_seeds: 1`, `test_iou_sd: NaN`. Do not quote until all 12 land |
+| POC imagery (`src/poc_images.py`) | done — 4 figures from real saved predictions |
+
+## Preparing for more data
+
+The binding constraint is **measured to be data, not method**: 19 validation
+chondrules give a bootstrap SE of ±0.0071 IoU and a **minimum detectable effect
+of ~0.014 absolute IoU**, which is larger than nearly every method effect we
+measured — six val/test comparisons flipped sign. `src/pipeline_v2.py` makes
+adding a meteorite a config change (`MeteoriteSource` → `build_multi_split` →
+`stage2_sweep` → `confidence_sweep`), reports the minimum detectable effect for
+whatever validation size results, and flags any gain below it as
+`below_noise_floor` rather than reporting it as a finding.
 
 See the KNOWN ISSUES block at the top of [CHANGELOG.md](CHANGELOG.md) before
 quoting any number.

@@ -7,13 +7,164 @@ Governed by [memory/constitution.md](memory/constitution.md) ·
 results in [CHANGELOG.md](CHANGELOG.md) ·
 specs in [specs/2026-07-23-chondrule-segmentation/](specs/2026-07-23-chondrule-segmentation/)
 
-**Last updated:** 2026-07-23
+**Last updated:** 2026-08-01
 
 > ⚠️ **Read the KNOWN ISSUES block at the top of [CHANGELOG.md](CHANGELOG.md) before quoting any number here.** Several results in this file are withdrawn or non-reproducing.
 
 ---
 
+## THE COMPLETE MODEL (constitution §12, Sky 2026-07-29) — SUPERSEDED BELOW
+
+> **This section lists the OLD four-stage, base-first order.** Sky reordered it
+> on 2026-07-30 to seven stages, hierarchy first and pixel dropping last. The
+> constitution is authoritative; this list has not been rewritten.
+
+
+From here on, **"the complete model" names exactly one thing** — the ordered
+composition of four pluggable stages:
+
+| # | stage | fit on | role |
+|---|---|---|---|
+| 0 | **base segmenter** — best arch by leakage-free val bake-off, high-recall operating point | train, selected on val | proposes; misses are unrecoverable |
+| 1 | **hierarchy filter** — superpixel cascade, thresholds frozen after val | val | compute (2.41× at recall 0.999) |
+| 2 | **confidence model** — learned trust/error meta-model vs free baselines | val | prunes false positives |
+| 3 | **z-layer neighbor confidence** — cross-slice agreement | val | exploits z-continuity |
+
+- Headline metric: **end-to-end test foreground IoU** vs the
+  plain-U-Net-at-matched-budget baseline.
+- **Every stage must be independently ablatable** — a stage that does not earn its
+  place has to be visible, not assumed.
+- **Architecture contract, not a performance claim.** At n=19 val chondrules the
+  MDE is 0.0142 IoU and the hierarchy measured −0.012 — inside the floor. The
+  stages are not currently distinguishable from break-even.
+- No stage may hard-code ALH 83010; the entry point stays `run_all(sources)`.
+
+**Verified state (2026-07-29):** all four stages are already *wired* into
+`pipeline_v2.run_all` — what is missing is the **composite**. Next session, in
+order:
+
+1. **[FIXED 2026-07-30] `combine.recall_threshold`** — `THR_GRID` floors at 2e-4 and the
+   function silently returns that floor, so **no** recall target is reachable
+   (measured: all four targets collapse to val recall 0.60 / 0.55). Extend the
+   grid to ~1e-7 log-spaced and make the fallback raise or flag. Constitution §9
+   ("over-predict, then prune") NOW executes: recall 0.99 is reached on the
+   control (0.9910), still unreached on the augmented arm (0.9355, flagged).
+   Regenerate the prune
+   and bake-off numbers in `final_pipeline.json` afterwards.
+2. **Give `run_all` a real entry point and run it** — it currently has no caller
+   anywhere; `__main__` is plumbing-only and `results_v2/` has no `pipeline_v2.json`.
+3. **Chain the stages** — base → hierarchy → **z-refine probabilities → prune**
+   (Sky's order, so nothing binarizes early). Today the bake-off winner, the prune
+   sweep and z-refine each read the same base map independently.
+4. **Add a hierarchy-off arm** to `stage2_sweep`, which currently only builds
+   `HierMaskedRunner` — so stages 0 and 1 cannot be ablated apart.
+5. **Settle the ablation threshold protocol** (shared grid vs per-arm) — at
+   MDE 0.0142 it changes the sign of small deltas.
+
+**🔑 Blocks Stage 2 — the base map is saturated.** Measured on the retrained
+model: **91.0%** of test pixels are < 1e-4, **7.3%** are > 0.9999, and only
+**0.32%** fall in the graded 0.1–0.9 band (pre-tiler-fix it was 3.00% — the old
+tiler's zero-padded-border averaging was manufacturing the gradation). A
+confidence model and the free `|p − 0.5|` baseline both rank by gradation, so
+there is almost nothing for Stage 2 to grade — a candidate explanation for the
+standing result that no confidence method beats a zero-parameter baseline by more
+than 0.0005 IoU. **Calibrate the base map first** (a loss that does not saturate
+logits, val-fit temperature scaling, or label smoothing) before judging Stage 2 or
+concluding anything about constitution §9's "over-predict, then prune". Also
+`save_prob` writes **float16**, which barely spans the 1e-5…1e-7 range where this
+model's residual signal lives — use float32 for val maps that meta-models fit on.
+
+**Also queued (2026-07-29), independent of the contract:**
+
+- **Relaunch the data-scaling curve** — `python -m src.data_scaling`, 12 runs ×
+  7,200 steps, ~10–11 h, resumable. **Stopped at 1 of 12 runs as of 2026-07-30, not running** (frac 0.25, test IoU 0.2823); the partial JSON is uncommitted
+  (`n_seeds: 1`, `sd: NaN`). It has **never completed the full sweep**; an earlier
+  attempt died at run 1/12 saving nothing. `results/data_scaling_v2.json` now
+  holds that single run and is deliberately uncommitted, so "does more annotated
+  data help?" remains unanswered. Now safe to run:
+  it passes `leaderboard=False` so its subset runs no longer pollute
+  `results/leaderboard_all.json`.
+- **Apply the same `leaderboard=False` isolation to `pipeline_v2.stage2_sweep`** —
+  still outstanding. It scores on the **v2 split** (val `[246,305]`, test
+  `[318,396]`) and writes into the frozen-split leaderboard, which
+  `fig_leaderboard` plots as one ranked chart.
+- **Fix the tile-boundary artifact at its source.** It is NOT cosmetic: on the
+  retrained model, column jumps at x=256k are 37–88× the median and y=512 is 201×,
+  cutting chondrules along straight lines (chondrule 1 of slice 69: TP 14164 vs
+  FN 15752). Whole-slice inference is NOT the fix (reverted — collapses the
+  model). The real options are upstream: replace GroupNorm with a normalisation
+  independent of window extent, or train on windows matching inference.
+  `run_families` now persists weights to `results/checkpoints/`, so
+  `predict_proba` vs `predict_proba_whole` can be compared on the actual headline
+  model instead of an untrained probe.
+- **Regenerate `poc_images`** — the committed figures are pre-fix renders, and
+  `src/poc_images.py` hard-codes `THR = 0.0076` while the probability map it loads
+  was frozen at 0.006.
+- **v2 split prevalence gap** — val `pos_frac` 0.0848 vs test 0.0311 (2.7×).
+  `zone_ranges` puts test at the end of the annotated band, reversing the frozen
+  split's deliberate placement in the chondrule-dense interior. IoU is
+  prevalence-sensitive, so a val-frozen threshold mis-transfers.
+
+Spec: [`specs/2026-07-29-complete-model-contract/spec.md`](specs/2026-07-29-complete-model-contract/spec.md)
+
+---
+
+## 🔜 READY FOR MORE METEORITES (`src/pipeline_v2.py`)
+
+The binding constraint is **data**, not method. Measured: 142 3D chondrules in
+the whole volume, **19 in validation**, giving a bootstrap SE of ±0.0071 IoU and
+a **minimum detectable effect of ~0.014 IoU**. Almost every method tested
+produced 0.005–0.014 IoU — at or below that floor, which is why six comparisons
+flipped sign between val and test. We could not measure whether they work.
+
+`pipeline_v2.py` makes adding meteorites a config change:
+
+- **`MeteoriteSource`** — point it at a new raw/label directory pair.
+- **`build_multi_split`** — per-meteorite contiguous z-slabs with buffers, then
+  concatenated, so no chondrule spans a seam and no meteorite lands only in test.
+  Reports per-zone 3D chondrule counts (the number that governs power).
+- **`power_report`** — prints the minimum detectable effect in absolute IoU for
+  the actual validation size; every reported gain is flagged
+  `below_noise_floor` when it is smaller.
+- **`stage2_sweep`** — the hierarchical second-stage sweep: candidate
+  architectures trained ONLY inside the hierarchy's alive mask, as `hier_cnn`
+  does now. Two measured operating points, don't conflate them:
+  **target recall 0.99 → 36.8% of pixels alive (2.71x saving), 99.91%
+  of chondrule pixels retained**; **target recall 0.999 → 41.5% alive
+  (2.41x saving)**, which is the setting `hier_cnn` was trained under.
+- **`confidence_sweep`** — the full bake-off (10 learned + 4 free baselines),
+  the FP-prune recall sweep, and z-refinement, all re-measured rather than
+  assumed. On the current data none of these beat a zero-parameter baseline by
+  more than 0.0005 IoU; with 19 validation chondrules that is not a finding
+  that they fail, it is a finding that we cannot tell.
+- **Checkpoints** (`CNNRunner.save_checkpoint` / `load_checkpoint`) — weights
+  used to die with the process, which is why the unlabeled-slice inference was
+  never produced. The val-selected threshold is stored with the weights.
+
+Defaults bake in what actually won: **plain UNet2D, 30,000 steps, lr 3e-4 with
+cosine decay, dice loss, no augmentation** — budget was the largest measured
+lever (+0.085 IoU from 3k→30k), larger than any architecture change.
+
+**Expected minimum detectable effect** — 19 chondrules: 0.014 IoU ·
+40: 0.010 IoU · 80: 0.007 IoU · 150: 0.005 IoU.
+
+---
+
 ## Where the numbers stand
+
+> 🔴 **EVERY CNN-FAMILY NUMBER IN THIS TABLE IS SUPERSEDED (2026-07-29).** All of
+> them were produced under **tiled inference** with the halo-accumulation defect.
+> That defect is fixed (halo now cropped) and **tiled inference remains the
+> default** — but a second mechanism is ACCEPTED, not fixed: GroupNorm normalises
+> per-window, so predictions still depend on where the tile grid falls. Measured
+> on the retrained model, positive-pixel counts jump **83x / 37x / 59x / 88x** the
+> median at x = 256 / 512 / 768 / 1024, and **201x** at y = 512 — visible as
+> straight-line cuts through chondrules. A whole-slice replacement was tried and
+> **reverted** (best-epoch val IoU 0.4487 → 0.2632 on a 25%-data run, epochs 8–12
+> at 0.0000–0.0075, two separate runs at the same config/seed; these nets
+> train on 128×128 patches). **Do not quote 0.3168, 0.3214, or any row below as
+> current.** Retrained headline: **0.29409**. GNN rows bypass the tiler and are
+> unaffected.
 
 | model | test IoU | note |
 |---|---|---|

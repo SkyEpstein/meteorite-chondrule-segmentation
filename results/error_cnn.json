@@ -1,0 +1,39 @@
+{
+  "model": "unet2d_s30000",
+  "recall_target": 0.99,
+  "val_fit_slices": 28,
+  "val_cutoff_slices": 28,
+  "base_val_iou": 0.44517639424817795,
+  "error_cnn_heldout_val_iou": 0.1948225141248724,
+  "error_cnn_heldout_gain": 0.12167142561516842,
+  "margin_heldout_val_iou": 0.40918764377576694,
+  "margin_heldout_gain": 0.33603655526606296,
+  "beats_margin_on_heldout_val": false,
+  "test_base": {
+    "iou": 0.29442699427623614,
+    "dice": 0.4549147933072295,
+    "precision": 0.37282081345867696,
+    "recall": 0.5833713427451607,
+    "tp": 3431574.0,
+    "fp": 5772778.0,
+    "fn": 2450741.0
+  },
+  "test_error_cnn": {
+    "iou": 0.11751779058423725,
+    "dice": 0.2103193194316827,
+    "precision": 0.15683509057953912,
+    "recall": 0.31915988858128136,
+    "tp": 1877399.0,
+    "fp": 10093130.0,
+    "fn": 4004916.0
+  },
+  "test_margin": {
+    "iou": 0.30278824149718325,
+    "dice": 0.46483109357698005,
+    "precision": 0.40370019242784705,
+    "recall": 0.5477794031771505,
+    "tp": 3222211.0,
+    "fp": 4759482.0,
+    "fn": 2660104.0
+  }
+}

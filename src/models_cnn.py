@@ -17,6 +17,7 @@ does the sigmoid and returns a [0,1] map, matching the tier-A/B runner API.
 Self-test:  python -m src.models_cnn      (architecture shape check only)
 """
 from __future__ import annotations
+import os
 import time
 import numpy as np
 import torch
@@ -30,6 +31,11 @@ from . import metrics
 # Device + determinism (seed everything).
 # ---------------------------------------------------------------------------
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+
+# Inference windows are replicate-padded up to a multiple of this before the
+# forward pass. 32 covers encoders down to depth 5 (2**5); a depth-4 U-Net only
+# needs 16. Only the edge windows are ever padded, so the cost is negligible.
+PAD_MULT = 32
 
 torch.manual_seed(0)
 RNG = np.random.default_rng(0)
@@ -212,6 +218,12 @@ def dice_loss(logits, target, valid, eps=1.0):
 
     Masking the probability and target by `valid` before the region sums makes
     ignored pixels contribute zero to both intersection and union.
+
+    [CALIBRATION] Dice loss is documented to produce poorly-calibrated,
+    overconfident predictions (Yeung et al. 2021, arXiv:2111.00528). Measured on
+    this project's own retrained model: 91.0% of test pixels sit below 1e-4,
+    7.25% above 0.9999, and only 0.32% in the graded 0.1-0.9 band — and the model
+    assigns hard zeros to 38% of chondrule pixels. See `dscpp_loss`.
     """
     prob = torch.sigmoid(logits) * valid
     gt = target * valid
@@ -219,6 +231,58 @@ def dice_loss(logits, target, valid, eps=1.0):
     denom = prob.sum() + gt.sum()
     dice = (2.0 * inter + eps) / (denom + eps)
     return 1.0 - dice
+
+
+def dscpp_loss(logits, target, valid, gamma=2.0, eps=1.0):
+    """DSC++ loss — Dice with the FP/FN penalties raised to `gamma`.
+
+    Yeung et al., "Calibrating the Dice loss to handle neural network
+    overconfidence for biomedical image segmentation" (arXiv:2111.00528).
+    Standard Dice weights every error linearly, which lets the network drive
+    logits to saturation at no extra cost; DSC++ leaves the true-positive term
+    alone and exponentiates only the FP and FN terms, so a *confident* mistake
+    costs relatively more than a hesitant one. gamma=2 is the paper's
+    recommended default (NLL fell ~5x across five datasets with Dice preserved
+    or improved).
+
+    [IMPLEMENTATION NOTE] The published equation renders as the exponent applied
+    to the SUMMED FP/FN terms. That reading is rejected here for two reasons:
+    (a) numerically, a squared pixel-count sum (~1e8) would swamp the linear
+    intersection term (~1e4) and pin the loss at 1.0; (b) it would rescale the
+    total error uniformly rather than "selectively modulate the penalty
+    associated with overconfident, incorrect predictions", which is the paper's
+    stated mechanism. The exponent is therefore applied PER PIXEL, before the
+    sum. Because p in [0,1], gamma>1 shrinks hesitant errors more than confident
+    ones, which is exactly the intended selectivity. `_dscpp_selfcheck` asserts
+    that behaviour.
+    """
+    prob = torch.sigmoid(logits) * valid
+    gt = target * valid
+    inter = (prob * gt).sum()
+    fp = ((prob * (1.0 - gt) * valid) ** gamma).sum()
+    fn = (((1.0 - prob) * gt * valid) ** gamma).sum()
+    dsc = (2.0 * inter + eps) / (2.0 * inter + fp + fn + eps)
+    return 1.0 - dsc
+
+
+def _dscpp_selfcheck():
+    """DSC++ must punish a CONFIDENT wrong pixel more than a hesitant one."""
+    valid = torch.ones(1, 1, 4, 4)
+    gt = torch.zeros(1, 1, 4, 4)          # everything is background
+    gt[0, 0, :2, :] = 1.0                 # ...except the top half
+    def loss_at(p_wrong, fn_=dscpp_loss):
+        logits = torch.full((1, 1, 4, 4), -6.0)          # confident background
+        logits[0, 0, :2, :] = 6.0                        # confident foreground
+        logits[0, 0, 3, 3] = float(np.log(p_wrong / (1 - p_wrong)))  # one FP
+        return float(fn_(logits, gt, valid))
+    hesitant, confident = loss_at(0.10), loss_at(0.95)
+    assert confident > hesitant, (confident, hesitant)
+    d_hes, d_con = loss_at(0.10, dice_loss), loss_at(0.95, dice_loss)
+    # the RELATIVE gap between a confident and a hesitant error must widen
+    assert (confident - hesitant) > (d_con - d_hes), \
+        f"DSC++ gap {confident-hesitant:.5f} !> Dice gap {d_con-d_hes:.5f}"
+    return {"dscpp_hesitant": hesitant, "dscpp_confident": confident,
+            "dice_hesitant": d_hes, "dice_confident": d_con}
 
 
 def tversky_loss(logits, target, valid, alpha=0.3, beta=0.7, eps=1.0):
@@ -480,7 +544,8 @@ class CNNRunner:
                  steps_per_epoch=200, batch=16, patch=128, pos_frac=0.5,
                  lr=1e-3, pos_weight=None, seed=0, val_stride=4,
                  weight_decay=0.0, augment=False, dilate_target=0,
-                 aux_lookup=None, invert_target=False, hard_frac=0.0):
+                 aux_lookup=None, invert_target=False, hard_frac=0.0,
+                 ckpt_dir=None):
         self.name = name
         self.tier = "C_cnn"
         self.make_model = make_model
@@ -501,9 +566,15 @@ class CNNRunner:
         self.pos_weight = pos_weight
         self.aux_lookup = aux_lookup
         self.seed = seed
+        # Weights were previously kept in memory only, so every trained model
+        # died with its process. Applying a model to a NEW meteorite (or to the
+        # ~1,590 untouched raw slices) means retraining from scratch. Persist
+        # them instead.
+        self.ckpt_dir = ckpt_dir
         self.model = None
         self.best_state = None
         self.best_thr = 0.5
+        self.best_full_val_iou = float("nan")
 
     def fit(self, train, val):
         """Train on `train` ONLY; use `val` ONLY for model selection. [LEAKAGE]
@@ -587,25 +658,172 @@ class CNNRunner:
         self.best_full_val_iou = float(full_iou)
         print(f"    [{self.name}] FULL-val IoU={full_iou:.4f} "
               f"frozen thr={self.best_thr:.2f}", flush=True)
+        if self.ckpt_dir is not None:
+            self.save_checkpoint(os.path.join(self.ckpt_dir, f"{self.name}.pt"))
         return self
 
-    def predict_proba(self, raw):
-        """(n,H,W) raw -> (n,H,W) float32 probabilities in [0,1].
+    # ---- checkpoints -------------------------------------------------
+    # `make_model` is a closure and cannot be pickled, so a checkpoint stores
+    # weights + the frozen operating point + enough config to VERIFY that the
+    # runner you rebuild matches. Reload is therefore:
+    #     r = CNNRunner(name, make_model, loss_fn, k=..., ...)
+    #     r.load_checkpoint(path)      # no fit() needed
+    #     probs = r.predict_proba(raw_of_a_new_meteorite)
 
-        Overlap-tiled full-slice inference: 256-px tiles, each read with a
-        32-px halo of context; sigmoid outputs are accumulated and averaged
-        where haloed windows overlap. Handles arbitrary H,W; builds the 2.5D
-        input channels internally when k>1.
-        """
-        assert self.model is not None, "call fit() before predict_proba"
+    CKPT_CFG = ("name", "k", "patch", "lr", "epochs", "steps_per_epoch",
+                "batch", "pos_frac", "seed", "augment", "dilate_target",
+                "invert_target", "hard_frac", "weight_decay")
+
+    def save_checkpoint(self, path):
+        """Write best-by-val weights + frozen threshold to `path`."""
+        state = self.best_state
+        if state is None and self.model is not None:
+            state = {k: v.detach().cpu().clone()
+                     for k, v in self.model.state_dict().items()}
+        assert state is not None, "nothing to save: call fit() first"
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        torch.save({
+            "format": 1,
+            "state_dict": state,
+            # The threshold is part of the model: it was fit on validation and
+            # must travel with the weights, or the reloaded model is scored at
+            # an arbitrary operating point. [LEAKAGE][MUST]
+            "best_thr": float(self.best_thr),
+            "val_iou": float(self.best_full_val_iou),
+            "in_ch": self.k + (1 if self.aux_lookup is not None else 0),
+            "has_aux": self.aux_lookup is not None,
+            "config": {c: getattr(self, c) for c in self.CKPT_CFG},
+        }, path)
+        print(f"    [{self.name}] checkpoint -> {path}", flush=True)
+        return path
+
+    def load_checkpoint(self, path, strict_config=True):
+        """Restore weights + threshold. Rebuilds the net; no fit() required."""
+        ck = torch.load(path, map_location="cpu", weights_only=False)
+        in_ch = self.k + (1 if self.aux_lookup is not None else 0)
+        if in_ch != ck["in_ch"]:
+            raise ValueError(
+                f"input channels differ: runner={in_ch} checkpoint={ck['in_ch']}"
+                " — k and aux_lookup must match how it was trained")
+        if strict_config:
+            bad = {c: (getattr(self, c), ck["config"][c]) for c in self.CKPT_CFG
+                   if c in ck["config"] and getattr(self, c) != ck["config"][c]}
+            # Only inference-relevant mismatches are fatal; budget knobs are not.
+            fatal = {c: v for c, v in bad.items()
+                     if c in ("k", "patch", "invert_target")}
+            if fatal:
+                raise ValueError(f"checkpoint config mismatch: {fatal}")
+            if bad:
+                print(f"    [{self.name}] note: benign config drift {bad}",
+                      flush=True)
+        self.model = self.make_model(in_ch).to(DEVICE)
+        self.model.load_state_dict(ck["state_dict"])
         self.model.eval()
-        vol = stack_adjacent(normalize(raw), self.k)  # (n,k,H,W), fixed scale
-        if self.aux_lookup is not None:               # extra channel -> (n,k+1,H,W)
+        self.best_state = ck["state_dict"]
+        self.best_thr = float(ck["best_thr"])
+        self.best_full_val_iou = float(ck.get("val_iou", float("nan")))
+        print(f"    [{self.name}] loaded {path} "
+              f"(thr={self.best_thr:.3f}, val IoU={self.best_full_val_iou:.4f})",
+              flush=True)
+        return self
+
+    def _channels(self, raw):
+        """(n,H,W) raw -> (n,C,H,W) float32 network input. [shared by both paths]"""
+        vol = stack_adjacent(normalize(raw), self.k)   # (n,k,H,W), fixed scale
+        if self.aux_lookup is not None:                # extra channel -> (n,k+1,H,W)
             aux = np.stack([np.asarray(self.aux_lookup(raw[i]), np.float32)
                             for i in range(raw.shape[0])])
             vol = np.concatenate([vol, aux[:, None]], axis=1)
+        return vol
+
+    def predict_proba_whole(self, raw):
+        """Whole-slice single forward pass. **DO NOT USE on these models.**
+
+        Replicate-pads each slice to a multiple of PAD_MULT and runs ONE forward
+        pass, so the output has no tile-grid dependence at all. Kept only for the
+        record and for architectures that are not patch-trained.
+
+        [!] MEASURED TO COLLAPSE TRAINED-MODEL OUTPUT (2026-07-29). It was made
+        the default for about an hour and reverted. `ds2_f25_s0`, same config and
+        seed, but TWO SEPARATE TRAINING RUNS, not one model scored two ways: the
+        same-weights comparison was never run. Best epoch reached was 0.4487
+        tiled versus 0.2632 whole-slice; the epochs below are the worst of the
+        collapsed run and must not be quoted as the headline (an earlier version
+        of this docstring quoted 0.0004 alone, which was a cherry-pick):
+
+            epoch    tiled          whole-slice
+              8      0.4476         0.0000
+             11      0.4487         0.0004
+             13      0.3762         0.2632   <- best the collapsed run reached
+             15      0.4403         0.0075
+
+        Cause: these nets train on 128x128 patches at `pos_frac=0.5`, and
+        `_norm` is **GroupNorm**, whose statistics are computed over whatever
+        spatial extent it is handed. A whole 962x1450 slice is ~110x larger and
+        ~5% foreground instead of 50%, so the normalised features land far
+        outside the training distribution and the logits saturate. Worse, the
+        collapse happens INSIDE `fit()` — the per-epoch val pass uses this
+        method, so `best_state` and `best_thr` are selected on collapsed maps.
+
+        The lesson: with GroupNorm plus patch training, the inference window size
+        is effectively a **model hyperparameter**, not an implementation detail.
+        Matching the training window's statistics matters more than eliminating
+        tile-grid dependence. An untrained-net probability diff cannot detect
+        this — it is a decision-boundary collapse, not a smoothness artifact.
+        """
+        assert self.model is not None, "call fit() before predict_proba_whole"
+        self.model.eval()
+        vol = self._channels(raw)
         n, _, H, W = vol.shape
-        tile, halo = 256, 32
+        ph, pw = (-H) % PAD_MULT, (-W) % PAD_MULT
+        out = np.zeros((n, H, W), np.float32)
+        with torch.no_grad():
+            for i in range(n):
+                x = torch.from_numpy(np.ascontiguousarray(vol[i][None])).to(DEVICE)
+                if ph or pw:
+                    x = F.pad(x, (0, pw, 0, ph), mode="replicate")
+                p = torch.sigmoid(self.model(x)).cpu().numpy()[0, 0]
+                out[i] = p[:H, :W]
+        return out
+
+    def predict_proba(self, raw, tile=256, halo=32):
+        """(n,H,W) raw -> (n,H,W) float32 probabilities in [0,1]. THE default path.
+
+        Tiled inference: 256-px cores, each read with a 32-px halo of context
+        which is then CROPPED, so every output pixel comes from exactly one
+        window's core and `cnt == 1` everywhere. Edge windows are replicate-padded
+        up to PAD_MULT so the decoder does not pad asymmetrically. Handles
+        arbitrary H,W; builds the 2.5D input channels internally when k>1.
+
+        Two defects, one fixed and one deliberately accepted (2026-07-29)
+        ----------------------------------------------------------------
+        1. FIXED — the halo used to be ACCUMULATED rather than cropped. With
+           stride == tile, overlap sat in 64-px bands where the divisor jumped
+           1 -> 2 -> 4 while averaging in each window's ZERO-PADDED borders. That
+           produced visible axis-aligned seams: 5-7 of the 8 largest per-column
+           jumps landed exactly on a window boundary, versus 0-1 of 8 for GNN
+           models that bypass this tiler. Cropping removed it — measured 1/8 on a
+           boundary afterwards, boundary column jump only 1.1x the median.
+
+        2. ACCEPTED — `_norm` is GroupNorm, so each window is normalised by its
+           OWN statistics and predictions retain a diffuse dependence on where
+           the tile grid falls (untrained probe: mean|dp| 0.024, max 0.286 for a
+           128-px grid shift). The obvious cure — one whole-slice forward pass —
+           was tried and **made things far worse**, taking best-epoch val IoU
+           from 0.4487 to 0.2632 on a 25%-data run (worst epochs 0.0000-0.0075),
+           across two separate runs at the same config and seed. See
+           `predict_proba_whole` for the numbers and the reason. A 256-px window is close to the 128-px training patch,
+           so tiling keeps inference IN-DISTRIBUTION for GroupNorm; that matters
+           more than grid-invariance. Fixing this properly means changing the
+           normalisation or the training window, not the inference stitching.
+
+        [!] Every CNN-family number produced before the halo crop was measured
+        with the defective blend, including the 0.3168 headline.
+        """
+        assert self.model is not None, "call fit() before predict_proba"
+        self.model.eval()
+        vol = self._channels(raw)
+        n, _, H, W = vol.shape
         out = np.zeros((n, H, W), np.float32)
         with torch.no_grad():
             for i in range(n):
@@ -613,14 +831,27 @@ class CNNRunner:
                 cnt = np.zeros((H, W), np.float32)
                 for y0 in range(0, H, tile):
                     for x0 in range(0, W, tile):
+                        # Padded window (with halo) is what the net sees...
                         ya, yb = max(0, y0 - halo), min(H, y0 + tile + halo)
                         xa, xb = max(0, x0 - halo), min(W, x0 + tile + halo)
                         win = np.ascontiguousarray(vol[i, :, ya:yb, xa:xb][None])
+                        wh, ww = win.shape[-2:]
+                        ph, pw = (-wh) % PAD_MULT, (-ww) % PAD_MULT
+                        if ph or pw:
+                            win = np.pad(win, ((0, 0), (0, 0), (0, ph), (0, pw)),
+                                         mode="edge")
                         t = torch.from_numpy(win).to(DEVICE)
                         p = torch.sigmoid(self.model(t)).cpu().numpy()[0, 0]
-                        acc[ya:yb, xa:xb] += p
-                        cnt[ya:yb, xa:xb] += 1.0
-                out[i] = acc / np.maximum(cnt, 1.0)
+                        if ph or pw:
+                            p = p[:wh, :ww]
+                        # ...but only its CORE is kept, so cores tile once.
+                        cy0, cy1 = y0, min(H, y0 + tile)
+                        cx0, cx1 = x0, min(W, x0 + tile)
+                        acc[cy0:cy1, cx0:cx1] += p[cy0 - ya:cy1 - ya,
+                                                   cx0 - xa:cx1 - xa]
+                        cnt[cy0:cy1, cx0:cx1] += 1.0
+                assert cnt.min() >= 1.0, "tiling left an uncovered pixel"
+                out[i] = acc / cnt
         return out
 
 

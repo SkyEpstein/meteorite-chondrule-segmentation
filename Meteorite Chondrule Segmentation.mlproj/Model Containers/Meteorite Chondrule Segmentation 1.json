@@ -1,0 +1,128 @@
+{
+  "activityEntities" : [
+    "experimentCreated",
+    [
+      {
+        "createdDate" : "2026-07-30T14:56:23Z",
+        "event" : "experimentCreated",
+        "id" : "97CB04C9-D084-4F48-9EEF-34271278A304",
+        "subtitle" : "Meteorite Chondrule Segmentation 1",
+        "title" : "Model Source Created"
+      }
+    ]
+  ],
+  "contentDataResult" : {
+
+  },
+  "createdDate" : "2026-07-30T14:56:23Z",
+  "evaluationContainerEntity" : {
+    "createdDate" : "2026-07-30T14:56:23Z",
+    "evaluationEntities" : [
+
+    ],
+    "id" : "0f68c7c6-dc02-4927-83fb-05ee95cbaa1a",
+    "modifiedDate" : "2026-07-30T14:56:23Z",
+    "previewType" : "objectDetector",
+    "testingEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-07-30T14:56:23Z",
+      "dataResult" : {
+
+      },
+      "id" : "d3128722-d729-40b0-bdf9-18caac30d05d"
+    },
+    "trainingEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-07-30T14:56:23Z",
+      "dataResult" : {
+
+      },
+      "id" : "7d2788e4-3dcc-479e-b427-52d3e99f16d2"
+    },
+    "validationEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-07-30T14:56:23Z",
+      "dataResult" : {
+
+      },
+      "id" : "03de8c4d-8d76-4b8f-9851-b29b19b6a4a9"
+    }
+  },
+  "evaluationEntity" : {
+    "analysedDataType" : "none",
+    "dataResult" : {
+
+    },
+    "id" : "f27c8a32-b29d-4660-83ec-5021cc43629b"
+  },
+  "evaluationState" : "uninitialized",
+  "id" : "9B054D5C-C962-4376-A83C-F2D3DEF8BDDD",
+  "modelEntity" : {
+    "createdDate" : "2026-07-30T14:56:23Z",
+    "experimentID" : "9B054D5C-C962-4376-A83C-F2D3DEF8BDDD",
+    "id" : "6BBA2C01-8C04-41E6-A633-EF84C4345CDB",
+    "modifiedDate" : "2026-07-30T14:56:23Z",
+    "title" : "",
+    "version" : "1.0"
+  },
+  "modifiedDate" : "2026-07-30T14:56:23Z",
+  "preferredFilename" : "Meteorite Chondrule Segmentation 1",
+  "settingEntity" : {
+    "algorithmType" : "maxEnt",
+    "augmentations" : [
+
+    ],
+    "featureNames" : [
+
+    ],
+    "handActionClassifierAugmentations" : [
+
+    ],
+    "handPoseClassifierAugmentations" : [
+
+    ],
+    "harVideoAugmentations" : 0,
+    "odAlgorithmType" : "darknetYolo",
+    "odGridHeight" : 13,
+    "odGridWidth" : 13,
+    "seedType" : "default",
+    "styleTransferAlgorithmType" : "image",
+    "taskType" : "objectDetector",
+    "transferLearningEmbeddingType" : "dynamic"
+  },
+  "snapshotRole" : {
+    "withoutSnapshots" : 0
+  },
+  "state" : "uninitialized",
+  "title" : "Meteorite Chondrule Segmentation 1",
+  "trainingEntity" : {
+    "analysedDataType" : "choose",
+    "checkpointMetrics" : {
+
+    },
+    "dataResult" : {
+
+    },
+    "featureExtractionCheckpointMayBeAvailable" : false,
+    "progress" : [
+
+    ],
+    "snapshottableCheckpoints" : {
+
+    }
+  },
+  "validationEntity" : {
+    "analysedDataType" : "auto",
+    "dataResult" : {
+
+    },
+    "splitOptions" : {
+      "strategy" : {
+        "automatic" : {
+
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

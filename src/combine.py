@@ -31,7 +31,17 @@ from . import metrics
 # `recall_threshold` silently fall back to its minimum for every target >= 0.90
 # — so a "recall 1.00" experiment actually measured recall 0.69 and three
 # different targets returned identical results.
+# [FIX 2026-07-29, third instance of this defect] The floor above (2e-4) was
+# STILL three orders too high. Measured on the real val zone, every target in
+# {0.80, 0.90, 0.95, 0.98} fell back to it for both `unet2d_s30000` (achieved
+# recall 0.6014) and `hier_cnn_s30000` (0.5531) — four "different" prune targets
+# returning one identical row, and a bake-off advertised at recall 0.95 actually
+# running at 0.60. It is a grid-floor artifact, not model saturation: recall at
+# prob > 1e-7 is 0.985 / 0.970, and only 0.86% / 0.66% of chondrule pixels are
+# exactly zero. Dice-trained probabilities here are near-binary (91% of pixels
+# below 1e-4), so the useful operating points live in the far tail.
 THR_GRID = np.concatenate([
+    np.geomspace(1e-7, 2e-4, 20, endpoint=False),
     np.arange(0.0002, 0.005, 0.0004),
     np.arange(0.005, 0.05, 0.005),
     np.arange(0.05, 0.96, 0.05),
@@ -222,7 +232,7 @@ class ConfidenceModel:
         self.model = None
 
     @staticmethod
-    def build_features(prob, raw, thr, k=3):
+    def build_features(prob, raw, thr, k=3, extra=None):
         """(n,H,W) base probability + raw intensity -> (n,H,W,F) float32 stack.
 
         F = 11 confidence features, in order:
@@ -254,6 +264,19 @@ class ConfidenceModel:
         feats.append(r)
         m, s = _local_mean_std(r, 5)
         feats += [m, s]
+        if extra is not None:
+            # Optional extra channels, appended AFTER the fixed 11 so existing
+            # fitted models and feature indices are untouched. Used by
+            # `tta_confidence` to add cross-orientation disagreement — a signal
+            # none of the 11 can carry, because every one of them is invariant
+            # under flips and 90-degree rotations (verified: max feature delta
+            # 0.0 for flips, 3.6e-07 for rot90).
+            e = np.asarray(extra, np.float32)
+            if e.ndim == 3:
+                e = e[..., None]
+            if e.shape[:3] != feats[0].shape:
+                raise ValueError(f"extra {e.shape[:3]} != {feats[0].shape}")
+            return np.concatenate([np.stack(feats, axis=-1), e], axis=-1)
         return np.stack(feats, axis=-1)
 
     def _chunks(self, prob, raw, thr, k=3, chunk=6):
@@ -548,9 +571,20 @@ def recall_threshold(prob_val, mask_val, valid_val, target_recall=0.95):
         if m["recall"] == m["recall"] and m["recall"] >= target_recall:
             if best is None or m["precision"] > best[1]["precision"]:
                 best = (float(t), m)
-    if best is None:                      # target unreachable: take max recall
+    if best is None:
+        # Target genuinely unreachable even at the grid floor. Fall back to the
+        # most permissive threshold, but SAY SO — the silent version of this
+        # branch is what let a "recall 0.95" bake-off run at 0.60 undetected
+        # through three separate investigations. The flag rides on the returned
+        # metrics dict so callers can record it. [HONESTY]
         t = float(THR_GRID[0])
-        best = (t, metrics.metrics_from_pred(prob_val >= t, mask_val, valid_val))
+        m = metrics.metrics_from_pred(prob_val >= t, mask_val, valid_val)
+        m["recall_target_unreachable"] = True
+        m["requested_recall"] = float(target_recall)
+        print(f"    [recall_threshold] WARNING target recall {target_recall:.3f} "
+              f"UNREACHABLE; using grid floor {t:.2e} -> actual recall "
+              f"{m['recall']:.4f}", flush=True)
+        best = (t, m)
     return best
 
 
@@ -574,8 +608,27 @@ def fit_prune(prob_val, mask_val, valid_val, score_map_val, thr_recall,
     """
     base_iou = float(metrics.iou(prob_val >= thr_recall, mask_val, valid_val))
     lo, hi = float(np.min(score_map_val)), float(np.max(score_map_val))
+    # [FIX 2026-07-30] Cutoffs are QUANTILE-spaced, not linearly spaced.
+    # These score maps are near-binary (5.4% of pixels sit at exactly p == 1.0,
+    # 0.3-1.3% at exactly 0.0), so `np.linspace(lo, hi, 25)` put ONE point at a
+    # degenerate endpoint and 24 in ranges holding almost no mass. Measured
+    # consequence: every learned candidate "won" at the endpoint cutoff, where
+    # the prune is bit-identical to thresholding at p == 1.0 — i.e. the search
+    # never evaluated a real prune, and the confidence stage was recorded as
+    # useless without ever having been given a usable grid. Quantiles put the
+    # candidate cutoffs where the score mass actually is. The endpoints are kept
+    # so the no-op remains reachable and `gain` stays honestly comparable.
+    # [CORRECTED] Quantiles ALONE are worse than linspace here, not better:
+    # measured on a near-binary score, quantile spacing collapsed 25 candidate
+    # cutoffs to 3 (1 interior) because ~90% of the mass sits on a single value
+    # and `unique` dedupes the rest away, while linspace kept 23 interior points.
+    # The UNION is >= either grid by construction, so it covers a continuous
+    # learned score AND a near-binary free baseline without assuming which shape
+    # the caller has.
+    qs = np.quantile(score_map_val, np.linspace(0.0, 1.0, n_cut))
+    cuts = np.unique(np.concatenate([np.linspace(lo, hi, n_cut), qs]))
     best, table = (None, -1.0), []
-    for c in np.linspace(lo, hi, n_cut):
+    for c in cuts:
         pred = apply_prune(prob_val, thr_recall, score_map_val, float(c),
                            higher_is_worse)
         m = metrics.metrics_from_pred(pred, mask_val, valid_val)

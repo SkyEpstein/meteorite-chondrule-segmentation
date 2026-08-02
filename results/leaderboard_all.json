@@ -2,23 +2,6 @@
   "regime": "leakage-free contiguous z-slab split; threshold selected on VAL, frozen for a single TEST scoring; foreground=chondrule; N=1 meteorite (ALH 83010); local Mac (MPS/CPU), compute-limited",
   "leaderboard": [
     {
-      "model": "unet2d_s30000",
-      "tier": "C_cnn",
-      "iou": 0.3158675888790777,
-      "dice": 0.4800902333161798,
-      "precision": 0.4111820831470893,
-      "recall": 0.5767441900000255,
-      "tp": 3392591,
-      "fp": 4858233,
-      "fn": 2489724,
-      "auprc": 0.35151203061107755,
-      "ece": 0.05086584359386328,
-      "threshold": 0.006,
-      "per_slice_iou_median": 0.2950446219397985,
-      "sec": 7645.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
-    },
-    {
       "model": "unet2d_s15000",
       "tier": "C_cnn",
       "iou": 0.3088595028032994,
@@ -33,6 +16,23 @@
       "threshold": 0.002,
       "per_slice_iou_median": 0.30508521525429527,
       "sec": 17292.8,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+    },
+    {
+      "model": "unet2d_s30000",
+      "tier": "C_cnn",
+      "iou": 0.2940943253960683,
+      "dice": 0.45451760296693716,
+      "precision": 0.37188305886296014,
+      "recall": 0.5843673791695957,
+      "tp": 3437433,
+      "fp": 5805884,
+      "fn": 2444882,
+      "auprc": 0.42703279106092373,
+      "ece": 0.07017461245329626,
+      "threshold": 0.002,
+      "per_slice_iou_median": 0.28722989175586877,
+      "sec": 5195.1,
       "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
     },
     {
@@ -144,6 +144,23 @@
       "threshold": 0.5,
       "per_slice_iou_median": 0.23703043336564972,
       "sec": 1846.8,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+    },
+    {
+      "model": "unet2d_s30000_auggeom",
+      "tier": "C_cnn",
+      "iou": 0.24403939497060267,
+      "dice": 0.3923338697427174,
+      "precision": 0.30375165246441543,
+      "recall": 0.5538521823465762,
+      "tp": 3257933,
+      "fp": 7467714,
+      "fn": 2624382,
+      "auprc": 0.26341419692679563,
+      "ece": 0.08666867642327855,
+      "threshold": 0.002,
+      "per_slice_iou_median": 0.20345392162797443,
+      "sec": 5312.9,
       "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
     },
     {

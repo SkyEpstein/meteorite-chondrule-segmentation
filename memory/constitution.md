@@ -1,6 +1,6 @@
 # Project Constitution — Meteorite Chondrule Segmentation
 
-**Version 0.2 · 2026-07-23 · Owner: Sky Epstein**
+**Version 0.3 · 2026-07-29 · Owner: Sky Epstein**
 
 ## Mission
 Automatically locate **chondrules** (rocky/silicate inclusions) in meteorite
@@ -97,6 +97,86 @@ environment, fixed seeds, split saved to disk.
    zones they need (never test during a search), and concurrency defaults to
    **2 workers**. Four workers each rebuilding the split (~7 GB each) swamped
    the Mac on 2026-07-23.
+12. **The complete model (Sky, 2026-07-29).** From this point forward "the
+   complete model" names exactly one thing — the ordered composition of seven
+   pluggable stages, **in execution order (Sky, 2026-07-30)**:
+
+   ```
+   (1) HIERARCHY FILTER          -> alive mask; runs FIRST
+   (2) CLASSICAL SEGMENTER       -> denoise/CLAHE/top-hat/watershed probability
+   (3) CNN                       -> raw, plus a classical channel IF the
+                                    cascade arm wins; see UNSETTLED below
+   (4) CONFIDENCE: regressors    -\
+   (5) CONFIDENCE: error U-Net    +-> three independent error signals
+   (6) Z-NEIGHBOUR CONFIDENCE    -/
+   (7) PIXEL DROPPING (prune)    -> LAST; stacks all three into one score
+   ```
+
+   **The hierarchy runs FIRST** — its whole purpose is compute saving, and a
+   prefilter after the segmenter saves nothing. (An earlier version of this
+   clause numbered the base segmenter "(0)" ahead of it, which read backwards;
+   the code always did it correctly via `HierMaskedRunner`.)
+
+   **[UNSETTLED, do not read this as decided]** Whether the classical map is an
+   INPUT CHANNEL to the CNN (the Tier E cascade pattern) or an alternative Stage
+   2 candidate is **not decided**. Offered the choice on 2026-07-30, Sky declined
+   both and chose "**both, and let validation decide**": build (a) a CNN taking
+   the cleaned channels directly, and (b) a CNN cascaded on the classical
+   probability, then compare on validation. **Neither arm has been run.** An
+   earlier version of this clause asserted the cascade reading as binding, which
+   recorded a decision Sky had explicitly refused to make and foreclosed the
+   comparison he asked for.
+
+   **[LEAKAGE][MUST] IF the cascade arm is built, its channel must be
+   CROSS-FITTED out-of-fold over the train slices.** A base model's predictions
+   on its own training data are memorised, and feeding those to the refiner
+   teaches it to over-trust a channel that is weaker at inference. This is the
+   same requirement Tier E imposes on the GNN to CNN cascade.
+   `src/classical_crossfit.py` produces such a channel; measured, the
+   memorisation it guards against is small for gradient boosting (+0.0081
+   in-fold vs out-of-fold) but is expected to be much larger for the CNN.
+
+   **Pruning happens LAST and once**, consuming all three confidence signals
+   stacked into a single val-fit score, rather than pruning three times in
+   sequence — sequential pruning compounds errors and can only ever remove
+   pixels, never recover one an earlier stage wrongly dropped.
+   **[DEFINITION, Sky 2026-07-30] "Confidence model" and "learned error model"
+   mean the SAME THING in this project — stage (5) IS the error model: a regression
+   on the MAGNITUDE of the base model's error, threshold-independent, yielding an
+   error bar. One stage, not two.** The trust classifier
+   (`combine.ConfidenceModel`, a correct/incorrect probability) survives only as a
+   COMPARISON arm in the bake-off next to the free baselines; it is not a separate
+   deliverable, and v3+/v3++ in the roadmap below describe one thing.
+   Its headline number
+   is **end-to-end test foreground IoU** against the plain-U-Net-at-matched-budget
+   baseline — reported alongside Dice, precision, recall and calibration **as §5
+   requires**; a bare IoU does not satisfy this clause. **Every stage must be
+   ablatable** so a stage that does not earn its place is visible rather than
+   assumed. This is an **architecture contract, not a performance claim**: at
+   today's data volume (MDE 0.0142 IoU at n=19 val chondrules) the stages are
+   individually indistinguishable from break-even — the hierarchy measured
+   −0.012, *inside* that floor, and is justified on **compute** (2.41× at target
+   recall 0.999), not accuracy. **[REGIME] Those two figures, and every
+   CNN-family number they rest on, were measured under TILED inference — which
+   remains the default. Its halo-accumulation defect was fixed on 2026-07-29 (so
+   the numbers are being re-measured and may move), but a residual per-window
+   GroupNorm dependence is ACCEPTED and documented: measured on the retrained
+   model, positive-pixel counts jump 37-88x the median at x = 256 / 512 / 768 /
+   1024 and 201x at y = 512 (x = 1280 shows no jump) — i.e. at MOST but not every
+   tile
+   boundary. A whole-slice replacement was tried and reverted — it collapsed
+   best-epoch val IoU on a 25%-data run from 0.4487 to 0.2632, with epochs 8-12
+   at 0.0000-0.0075. [REGIME] Two SEPARATE training runs at the same config and
+   seed, not one model scored two ways — the same-weights comparison was never
+   run.** The base segmenter's
+   "high-recall operating point" is inherited from §9. It was NOT achieved until
+   2026-07-30, when `THR_GRID` was extended to 1e-7: recall 0.99 is now reached
+   on the control (achieved 0.9910). It is still NOT reached on the augmented arm
+   (achieved 0.9355, flagged unreachable), which is a comparability defect in any
+   bake-off across those two arms. No stage may
+   hard-code ALH 83010; the entry point stays `run_all(sources)` over
+   `MeteoriteSource` so more meteorites are an argument, not a code change.
+   Full spec: [`specs/2026-07-29-complete-model-contract/spec.md`](../specs/2026-07-29-complete-model-contract/spec.md).
 
 ## Roadmap
 **The canonical, detailed roadmap lives in [`ROADMAP.md`](../ROADMAP.md)** —
@@ -142,12 +222,17 @@ only record. The summary below is the high-level arc only.
   is reported rather than hidden. Ranked primarily by **downstream pruned IoU**
   (the quantity that matters), with ranking quality (AUROC / Spearman) reported
   alongside.
-- **v3++** — **Learned error model** (Sky, proven on the REE-logD work): a
+- **v3++** — **Learned error model = THE confidence model** (Sky, proven on the
+  REE-logD work; and per §12's definition note, v3+ and v3++ are ONE stage, with
+  the trust classifier demoted to a comparison arm): a
   *regression* meta-model predicting the **magnitude of the base model's error**
   per pixel, and aggregated per slice / per chondrule. Distinct from the trust
   classifier above — it is threshold-independent and yields an expected-error
   value (an error bar) rather than a correct/incorrect probability. Trained on
   VALIDATION-zone predictions only; judged by predicted-vs-actual error
   correlation and by whether it beats the classifier at selective prediction.
+- **v3+++** — **The complete model** (§12): compose the seven stages of §12 in
+  `pipeline_v2.run_all`, score end-to-end with per-stage ablations, and carry the
+  contract unchanged onto the larger multi-meteorite dataset.
 - **v4** — Apply the best model to the unlabeled slices; deliver probability
   maps + confidence.

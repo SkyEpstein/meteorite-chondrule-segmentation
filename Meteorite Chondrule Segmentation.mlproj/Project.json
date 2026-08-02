@@ -1,0 +1,29 @@
+{
+  "activityEntities" : [
+    "projectCreated",
+    [
+      {
+        "createdDate" : "2026-07-30T14:56:22Z",
+        "event" : "projectCreated",
+        "id" : "1EB8BF41-DE9B-4C45-B1AD-DA7BA191FDFF",
+        "subtitle" : "Meteorite Chondrule Segmentation",
+        "title" : "Project Created"
+      }
+    ]
+  ],
+  "authorName" : "Sky Epstein",
+  "createdDate" : "2026-07-30T14:56:22Z",
+  "description" : "",
+  "id" : "BD6E372C-6D7F-4B91-B1C6-2BD2E6F7A593",
+  "license" : "",
+  "location" : "",
+  "modifiedDate" : "2026-07-30T14:56:22Z",
+  "projectName" : "Meteorite Chondrule Segmentation",
+  "settingsEntity" : {
+    "snapshotOnExtendTraining" : true,
+    "snapshotOnResumeTraining" : false
+  },
+  "taskType" : "objectDetector",
+  "title" : "Object Detection",
+  "version" : "1.1"
+}

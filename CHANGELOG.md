@@ -7,6 +7,54 @@ project. Honest numbers only; evaluation regime stated with every metric.
 
 ### ⚠️ KNOWN ISSUES IN THIS COMMIT (found by pre-commit review — read first)
 
+- **🔴 ALL CNN-FAMILY TEST SCORES WERE MEASURED WITH TILED INFERENCE, AND TILED
+  INFERENCE IS STILL THE DEFAULT — but it has TWO defects, one fixed and one
+  accepted (2026-07-29).** A whole-slice replacement was tried and **reverted**;
+  see below. In sequence:
+  1. The tiler **accumulated its halo** instead of cropping it, producing
+     axis-aligned seams in every CNN/transformer/modern-conv probability map —
+     including `unet2d_s30000` (0.3168). Cropping the halo fixed *that*: the
+     boundary-localised artifact is gone (1/8 largest column jumps on a
+     boundary afterwards, boundary jump 1.1× median).
+  2. **Cropping was not sufficient.** These nets normalise with **GroupNorm**,
+     which takes statistics over whatever spatial extent it is given, so under
+     tiling every window was normalised by its own statistics and its
+     predictions shifted as a block. Measured with the *fixed* tiler: moving the
+     tile grid 128 px changed predictions by mean 0.024 / max 0.286, and tiled
+     vs a single whole-image pass differed by mean 0.022 / max 0.331. This is
+     **invisible to a constant-image test** (GroupNorm is degenerate there),
+     which is why the original verification passed.
+
+  Tiling was replaced by a whole-slice pass and then **REVERTED within the
+  hour**, because whole-slice inference *collapsed* trained-model output — val
+  best-epoch IoU 0.4487 → 0.2632 (epochs 8-12 at 0.0000-0.0075), on two SEPARATE
+  runs at the same config and seed — not one model scored two ways. These nets
+  train on 128×128
+  patches at `pos_frac=0.5`; a whole 962×1450 slice at ~5% foreground puts
+  GroupNorm far out of distribution. **Tiled inference (halo cropped) is the
+  default and the accepted state**, with its residual grid dependence documented
+  rather than fixed. Fixing it properly means changing the normalisation or the
+  training window, not the stitching.
+
+- **⚠️ The val-selected threshold sits ON the grid floor — but it is NOT clamped
+  (measured).** `CNNRunner.fit` selects on `np.arange(0.002, 0.05, 0.004) ∪
+  np.arange(0.05, 0.96, 0.05)`, floor exactly **0.002**, and `run_and_score`
+  scores with that `best_thr`. The retrained `unet2d_s30000` selected 0.002 — the
+  boundary — which looks like the truncated-grid defect logged three times before.
+  **It is not, here.** Re-selecting on the same saved val map with the grid
+  extended to **1e-7** returns the *same* 0.002 and the *same* test IoU 0.29409.
+  The val-IoU curve is flat over 5e-4…2e-2 (0.44426 / 0.44512 / 0.44475) with a
+  true maximum at 0.002, collapsing only below 1e-4. So no IoU is being lost to
+  the grid for this model. **Still worth fixing:** `unet2d_s15000` and
+  `matrix_specialist` also sit on the floor and have not been checked, and both
+  `:.2f` prints render 0.001/0.002 as `thr=0.00`, so a real clamp would be
+  invisible. Extend the grid and print more digits so the distinction is
+  observable rather than requiring a bespoke probe.
+
+  **Every leaderboard IoU in this repo was produced under tiled inference, and
+  the leaderboard now mixes a post-halo-crop row with ~40 pre-fix rows with no
+  per-row provenance.** Full detail under 2026-07-29 below.
+
 - **`+10% from z-context` is UNBACKED.** `results/probs/unet25d_k5.npy` is
   actually the 30,000-step run's output (bare-name collision, fixed in code but
   after these files were written). Re-scoring it gives **0.2154**, not the
@@ -37,6 +85,17 @@ project. Honest numbers only; evaluation regime stated with every metric.
   drop-straddlers-entirely comparison was never computed.
 - **v4 unlabeled inference was never produced** — the sweep saved probabilities
   but not model weights, so there is nothing to run on the 130 unlabeled slices.
+  *(Fixed going forward by `CNNRunner.save_checkpoint`, 2026-07-29 — but the
+  already-swept models are gone and would need retraining.)*
+- **`results/data_scaling.json` is confounded** — contiguous subsets and one
+  seed per point; it is non-monotonic and worst at 100% data. Do not quote it.
+  **It has NO replacement yet:** `src/data_scaling.py` is written but has never
+  completed a full 12-run sweep. A third attempt reached **1 of 12 runs** then stopped when the session ended;
+  `results/data_scaling_v2.json` holds that single run (frac 0.25, seed 0,
+  test IoU 0.2823, `n_seeds: 1`, `test_iou_sd: NaN`) — it is deliberately NOT
+  committed, because a single-seed partial under that filename is exactly the
+  misquoting hazard the file exists to prevent. The
+  question "does more annotated data help?" is currently unanswered.
 - **`tests/` is empty.** ~5,000 new lines ship with only synthetic `__main__`
   smoke tests, none run automatically.
 - **Latent bug:** `run_families.py` / `cascade.py` do `bool(rec["aug"])`, so an
@@ -44,6 +103,765 @@ project. Honest numbers only; evaluation regime stated with every metric.
   today (winning recipe has `aug: false`).
 
 
+
+### 2026-07-31: Classical Stage-0, the image confidence model, and what is still broken
+
+*Spec (condensed). **Problem:** Sky proposed a classical pipeline (denoise,
+CLAHE, morphological texture separation, watershed) and an image-based confidence
+model, and reordered the complete model so pruning happens last on three stacked
+signals. **Approach:** build each as an addition to the existing paths so the
+comparison is like-for-like, and adversarially review before trusting anything.
+**Acceptance:** every arm scored under the frozen split with test touched once,
+and every unfixed defect written down rather than left in the code.*
+
+**Classical Stage-0: the harness reproduces, and Sky's additions help.**
+
+| arm | test IoU | Dice | prec | recall | AUPRC | graded% |
+|---|---|---|---|---|---|---|
+| `base18` (the existing 18 features) | 0.2028 | 0.3373 | 0.2486 | 0.5241 | 0.2428 | 30.62% |
+| `plus3` (+ denoise, CLAHE, top-hat) | 0.2127 | 0.3508 | 0.2910 | 0.4414 | 0.2799 | 30.65% |
+| `plus3_ws` (+ watershed) | 0.2185 | 0.3586 | 0.3209 | 0.4063 | 0.2799 | 30.65% |
+
+`base18` reproduces the published classical-ML baseline (0.203) to three
+decimals, so the harness is validated. Sky's cleaning channels add **+0.0099** and
+watershed a further **+0.0058**; unlike most comparisons here these are *paired*
+(identical sampling, estimator and seed), so they carry no training-seed noise.
+Two runs produced byte-identical numbers. **But at 0.2185 it loses to the CNN's
+0.29409 by 0.076**, so it is not a competitive Stage 0 on its own. Its one
+striking property is **30.6% graded pixels against the CNN's 1.19%**, 26x more
+gradation, which is what stages 3-6 consume.
+
+**The image confidence model (error U-Net) HURT, badly.**
+
+```
+base (threshold only)   IoU 0.2944
++ margin baseline       IoU 0.3028
++ error U-Net           IoU 0.1175      -0.1769 vs base, 12x the noise floor
+```
+
+On the held-out validation half it *worked* (unpruned 0.0732 -> pruned 0.1948,
++0.1217) and then transferred catastrophically. **[HONESTY] Three confounds, and
+the review found a fourth that may dominate:** it was fit on ~9 chondrules
+(val halved again); the base map is 91% saturated so there is little to learn
+from; the val/test split has flipped sign seven times in this project; and
+`fit_error_unet` samples patches **uniformly**, with no positive weighting, while
+`PatchSet` uses `pos_frac=0.5` precisely because the target is ~0 across ~95%
+background. The result is therefore **not yet evidence about image confidence
+models.** Do not cite it as one.
+
+**Cross-fitting measured, and the first hypothesis was wrong.** To give the error
+model more than 9 chondrules, the base model's train predictions must be
+out-of-fold. A 2-fold classical cross-fit gave out-of-fold train IoU 0.1507 vs
+0.2875 full-fit on val, which looked like a channel-quality problem; a 5-fold
+redo (2 h) moved it only to 0.1591. The decisive measurement, the full-fit model
+scored **in-fold on its own train data**, settles it:
+
+```
+same 27 train slices, thr 0.5:  in-fold 0.1736   out-of-fold 0.1655   gap +0.0081
+foreground fraction:            train 0.0359   val 0.0666   test 0.0528
+```
+
+Gradient boosting barely memorises here (+0.008). The apparent 0.13 gap is **zone
+prevalence**: train has half the foreground density of val, and IoU is strongly
+prevalence-sensitive. Cross-fitting was still correct (the constitution requires
+it) but is cheap insurance for this model class, not a load-bearing fix. The
+2 h re-run was spent on a wrong diagnosis that a 90-second in-fold check would
+have refuted.
+
+**Constitution §12 reordered (Sky):** hierarchy, then classical, then CNN (whether the
+classical map is an input channel is UNSETTLED; Sky chose to build both arms
+and let validation decide), then regressor confidence, then error
+U-Net, then z-neighbour, and **pixel dropping LAST**, stacking all three confidence signals into
+one val-fit score. The cascade channel must be cross-fitted;
+`src/classical_crossfit.py` produces it (5 contiguous folds, 12-slice buffer, all
+213 train slices covered, verified disjoint).
+
+**The confidence bake-off, which answers Sky's actual question.** Run at recall
+0.99 on both base models (`results/confidence_compare.json`):
+
+| base model | graded% | base IoU | pruned IoU | gain (test) | gain (VAL) |
+|---|---|---|---|---|---|
+| `unet2d_s30000` | 1.19% | 0.2944 | 0.3028 | +0.0084 | **-0.0071** |
+| `unet2d_s30000_auggeom` | 0.92% | 0.2436 | 0.2461 | +0.0025 | **-0.0077** |
+
+**Sky's question was whether an augmented base model gives its confidence model
+more to learn from. The answer is no, and it moved the wrong way**: the augmented
+map is LESS graded (0.92% vs 1.19%), and its prune gains less.
+
+**[HONESTY] Both "gains" are below the 0.0142 floor AND negative on validation,
+the split everything was selected on.** The positive test numbers are sign flips
+below the noise floor, the seventh and eighth recorded in this project. Do not
+cite +0.0084 as a gain.
+
+**The learned models pruned nothing.** Every error regressor and every trust
+classifier returned a pruned val IoU equal to the UNPRUNED value to five decimals
+(0.06661 control, 0.06429 augmented), i.e. the fitted cutoff was "remove
+nothing". The winner on both arms was the zero-parameter free baseline `margin`
+(0.4381 / 0.4532), whose winning cutoff is bit-identical to keeping `p == 1.0`.
+Since pruning by `|p - 0.5|` on a map opened to recall 0.99 is **re-thresholding
+in disguise**, constitution §9's over-predict-then-prune collapsed back to
+choosing a threshold, and ten learned meta-models could not beat it. Extending
+the cutoff grid (linear plus quantile, up to 48 points) changed nothing, so the
+search was fair. Constitution v3+b requires exactly this to be reported rather
+than hidden: **the learned confidence model has not earned its complexity.**
+
+**New modules in this commit, with their status:**
+
+| module | what it does | state |
+|---|---|---|
+| `classical_pipeline.py` | denoise, CLAHE, top-hat, watershed | scored; watershed defective (below) |
+| `run_classical.py` | scores the classical arms, saves probs + estimators | reproduces the 0.203 baseline |
+| `classical_crossfit.py` | 5-fold out-of-fold classical maps for the cascade channel | run; all 213 train slices covered |
+| `cnn_crossfit.py` | 5-fold out-of-fold CNN maps, so the error model gets more than 28 slices | **written, never completed a run** |
+| `error_cnn.py`, `run_error_cnn.py` | image-based confidence model (U-Net on raw+prob) | run once; result confounded (below) |
+| `confidence_compare.py` | confidence bake-off across base models at a chosen recall | run at recall 0.99 |
+| `tta_confidence.py` | test-time augmentation as error-model training data | **dead code, four defects (below)** |
+
+`cnn_crossfit.py` was started once and killed 3 epochs in after a review found
+three defects in it, all now fixed and none ever exercised: epoch selection was
+being done on the held-out fold itself (with `val_stride=6` every held-out slice
+sat within 3 of a selection slice, inside the project's 12-slice buffer, so the
+contamination covered the whole fold); the incremental save wrote a
+NaN-containing partial to the FINAL path, where it would look complete to every
+reader and silently poison a `PatchSet` aux channel or return `gain 0.0` from
+`fit_prune`; and fold weights were discarded. It now selects on the real val
+slab, writes `.partial` and renames only after asserting every slice is finite,
+persists per-fold checkpoints, and records genuine out-of-fold IoU per fold
+rather than the val IoU it was selected on.
+
+**SHIPPED WITH KNOWN DEFECTS, recorded and not fixed.** A pre-commit review found
+these in code that is being committed.
+
+**[RETRACTED] One of them DOES affect a published number in this very entry.**
+An earlier draft of this block claimed "none affects a published number". That is
+false: the `plus3_ws` row above (test IoU 0.2185, credited with **+0.0058** from
+watershed) is a direct product of the defective `watershed_split` below. Its
+recall falls 0.4414 to 0.4063 while precision rises, which is the signature of
+**silently deleting small objects**, not of better instance separation. **Treat
+the +0.0058 watershed gain as unverified**; it may be an artifact of dropping
+objects the metric then stops penalising. The `plus3` row (+0.0099 from the
+cleaning channels) is unaffected, it involves no watershed.
+
+- `classical_pipeline.watershed_split` **silently deletes small objects** (any
+  component whose distance-transform max is below `min_distance` gets no marker
+  and vanishes) and **over-segments ~22x** (22,375 labels over 80 test slices
+  against a measured 999 true 2D components = 12.5 per slice). The label count is
+  itself an upper bound: `run_classical` accumulates `lab.max()`, not surviving
+  labels, so `min_size` dropping punches holes in the id range. This is what
+  makes the `plus3_ws` row above unverified.
+- `error_cnn` uses a **4-slice val buffer** where the project mandates 12, and
+  the unweighted sampling above.
+- `tta_confidence.build_rows` delivers **no extra rows** at default `max_px`
+  (it divides the budget by 8 rather than multiplying), samples **disjoint**
+  pixels per orientation rather than the same pixels under 8 views, needs ~6 GB
+  per orientation, and has **no inference path** (`_chunks` has no `extra`
+  parameter, so a 12-feature model raises on predict). The module is currently
+  unreachable dead code.
+- `tests/` remains **empty** across ~1,400 new lines.
+
+### 2026-07-30 — Geometry augmentation at a matched 30k budget: −0.0501 test IoU
+
+*Spec (condensed) — **problem:** the only augmentation evidence was a 7,200-step
+comparison that structurally penalises augmentation, so "augmentation loses" was
+not established. **Approach:** run geometry-only augmentation at the 30,000-step
+headline budget, everything else identical, and adversarially verify the result
+before recording it. **Acceptance:** the two arms differ ONLY in augmentation,
+verified from the run's own saved config rather than from intent; and every
+inference drawn from the numbers survives a hostile check.*
+
+**Result — metrics together per §5:**
+
+| model | test IoU | Dice | precision | recall | AUPRC | thr |
+|---|---|---|---|---|---|---|
+| `unet2d_s30000` (control) | **0.29409** | 0.45452 | 0.37188 | 0.58437 | 0.42703 | 0.002 |
+| `unet2d_s30000_auggeom` | **0.24404** | 0.39233 | 0.30375 | 0.55385 | 0.26341 | 0.002 |
+| **Δ (augmented − control)** | **−0.05005** | −0.0622 | −0.0681 | −0.0305 | −0.1636 | |
+
+**Comparability was verified, not assumed.** The saved checkpoint
+(`results/checkpoints/unet2d_s30000_auggeom.pt` — the first this project has ever
+written) records the run's ACTUAL config: `augment="geom"`, `seed=0`, 60×500,
+batch 16, patch 128, lr 3e-4, wd 0.0, pos_frac 0.5, k=1, dice loss. Every value
+matches the control's recipe. The training and inference code were shown
+AST-identical across the two runs, and a tiler seam-signature probe confirms both
+used the post-fix tiler (top-8 column jumps at 255/511/767/1023, versus the pre-fix
+signature 223/287/479/543/735/799/991/1055 carried by both 7.2k arms).
+
+**Not a thresholding artifact.** The deficit is **−0.047 … −0.054 at every
+threshold from 1e-4 to 0.95**, and **−0.0504** when each arm is re-thresholded at
+its own validation optimum on a grid extended to 1e-7. (0.002 is the floor of
+`CNNRunner.fit`'s own grid, but re-selecting freely moves the augmented arm's
+optimum to 8.76e-4 and makes it *slightly worse*, so the floor is not penalising
+it.)
+
+**[HONESTY] This is a replicated point estimate, NOT a decisive result.**
+
+- **n=1 seed per arm**, on non-deterministic MPS. This project's own
+  `src/data_scaling.py` docstring states that single-seed differences of
+  0.03–0.06 "sit only ~4-8 SE apart *before* counting training-seed variance"
+  and that with n=1 "there is no way to tell a real trend from run-to-run
+  scatter". −0.05 is squarely in that regime.
+- **The 0.0142 MDE is a VALIDATION-side figure** (`pipeline_v2.py`:
+  `SE_REF_IOU=0.0071`, `SE_REF_N=19` val chondrules). There is no test-side MDE
+  anywhere in this repo, and the figure excludes training-seed variance entirely.
+  Quoting "3.5× the MDE" against a test delta overstates what it means.
+- **Validation says the opposite.** Full-val 0.4451 → 0.4608, i.e. **+0.0157**,
+  stable at every threshold — but that is only **1.1× the val MDE**, so "won
+  validation" would overstate it too. Seventh val/test sign flip recorded here.
+- **The two SCORED checkpoints did not consume equal training.** Best-by-val
+  epoch was **21/60 for the control** (~10,500 steps, then decaying 0.089 from
+  peak) and **43/60 for the augmented arm** (~21,500 steps, still within 0.023 of
+  peak at the end). "Matched 30k budget" is true of compute *allotted*, not
+  compute *used* — and the augmented arm was still near its optimum when the
+  budget ran out.
+
+**[RETRACTED] "This refutes the budget-confound hypothesis."** It does not, and
+the claim switched metrics mid-argument. Tracked consistently on VALIDATION the
+gap runs 0.165 (3k) → 0.0133 (7.2k) → **−0.0157** (30k), which is what the budget
+hypothesis predicts; the earlier "augmentation simply needed steps to amortize"
+entry was itself made on val. The epoch-of-peak evidence above points the same
+way. **Val and test disagree; the hypothesis is CONTESTED, not closed.**
+
+**[RETRACTED] "CT slices have a privileged orientation."** Offered as the likely
+mechanism; it is unsupported. Grep finds zero occurrences of ring artifact, beam
+hardening, beam direction, settling or any isotropy measurement anywhere in the
+repo — and the augmentation is **in-plane only**, so settling and beam direction
+(z-axis phenomena) *cannot* be penalised by it. Only ring artifacts would even be
+mechanically applicable. The `PatchSet` comment it contradicted ("CT texture has
+no privileged orientation") is equally unmeasured; both sides are speculation.
+
+**[DEMOTED] AUPRC as independent corroboration.** −0.164 is real at float32, but
+recomputing at the float16 resolution the maps are actually stored in gives
+0.309 → 0.231, a gap of −0.079 — same sign, half the magnitude. ~90% of pixels
+sit below 1e-4 for both models, so AP is dominated by ordering inside a saturated
+mass, and the integral includes recall regions nobody operates at. The threshold
+sweep settles the question better; AUPRC is a consistency note only.
+
+### 2026-07-30 — Calibration (DSC++), the recall floor, and what the literature says
+
+*Spec (condensed) — **problem:** three separate failures (a saturated probability
+map, a confidence stage that never beats a free baseline, and a prefilter that
+cannot use the CNN) all trace to one suspected root cause: an overconfident base
+model. **Approach:** check the literature before inventing anything, then attack
+the root cause rather than the symptoms. **Acceptance:** each proposed change is
+traced to a published result, implemented from the actual formulation rather than
+memory, and unit-tested for the behaviour it is supposed to produce.*
+
+**Literature review — three of our findings are named, documented problems.**
+
+1. **Dice loss is documented to cause exactly our saturation.** Yeung et al.,
+   [arXiv:2111.00528](https://arxiv.org/abs/2111.00528): the DSC loss "is known
+   to yield poorly calibrated, overly confident predictions", specifically
+   dangerous on small medical datasets. Their **DSC++** fix exponentiates only
+   the FP/FN penalty terms; at γ=2 negative log-likelihood fell ~5× across five
+   datasets (e.g. DRIVE 0.204 → 0.041) with Dice preserved or improved.
+2. **Our tile artifact is a named problem and normalization is the cause.**
+   [arXiv:2503.19545](https://arxiv.org/abs/2503.19545), "Tiling artifacts and
+   trade-offs of feature normalization": *"we investigate the root cause of these
+   issues and show that they stem from the normalization layers within the neural
+   networks."* Independently the same conclusion reached here from the figures.
+   They recommend **BatchRenorm**; global normalization (BatchNorm) gives
+   artifact-free stitching at a quality cost, tile-wise gives quality with
+   artifacts. **This also means the whole-slice attempt was the wrong axis
+   entirely** — the fix belongs in the normalization, not the stitching.
+3. **Our hierarchy result is the known domain finding.** The meteorite micro-CT
+   literature attributes poor simple-classifier performance to "an overlap in the
+   range of intensities present in the different components" — the exact overlap
+   measured here (chondrule regions 0.2506 vs empty rock 0.1578, p90 of empty
+   above the chondrule mean). Local-histogram features beat pixel intensity
+   85.8% vs 73.4% percent-correct, which indicates the prefilter's next feature
+   set.
+
+**`dscpp_loss` added and unit-tested** (`models_cnn.py`). γ=2 default.
+[IMPLEMENTATION NOTE] The published equation renders with the exponent on the
+SUMMED FP/FN terms; that reading is rejected and the reason is recorded in the
+docstring — it is numerically explosive (a squared pixel-count sum swamps the
+linear intersection term) and it would rescale total error uniformly rather than
+"selectively modulate the penalty associated with overconfident, incorrect
+predictions". The exponent is applied per-pixel. `_dscpp_selfcheck` asserts the
+intended behaviour and passes:
+
+```
+                    hesitant wrong   confident wrong    gap
+Dice                    0.008018         0.054999    0.046981
+DSC++ (gamma=2)         0.000595         0.050529    0.049934   <- more selective
+perfect 0.00000   inverted 0.98428
+```
+
+**🔴 `THR_GRID` floor fixed — third instance of this defect.** Extended to 1e-7
+(`combine.py`). Before: every recall target ≥0.80 silently fell back to the 2e-4
+floor, so a bake-off advertised at recall 0.95 **actually ran at 0.60** and four
+"different" prune targets returned one identical row. After: recall 0.99 is
+reachable at thr 2.14e-07 (achieved 0.9910). 0.995+ is genuinely unreachable
+(max 0.9945) and now **prints a warning and sets `recall_target_unreachable` on
+the returned metrics** instead of failing silently — the silence is why this
+survived three investigations. [HONESTY] At recall 0.99 the base model's val IoU
+is **0.0666** (precision 0.0667): that is the true cost of the over-predict step,
+and the prune must climb back past 0.294 to beat plain thresholding.
+
+**Augmentation — the record, corrected.** Both arms had already run, at 7,200
+steps: `long_p1_ctrl_b32` (none) **0.2834** vs `long_p1_geom_b32` (flips +
+rot90) **0.2329** — augmentation lost by **0.0505**, 3.6× the MDE. Caveats: both
+predate the tiler fix, both n=1 seed, and a *fixed* budget structurally penalises
+augmentation because the model sees each real configuration less often. Sky's
+call is to re-test geometry-only at the 30k headline budget; `run_families` now
+takes `--aug=` and `--loss=` overrides, each of which renames the run so a
+bake-off arm can never overwrite the row it is compared against.
+
+**[WITHDRAWN] Elastic deformation was proposed and retracted.** It was suggested
+from generic biomedical practice; Sky challenged whether it preserves the data,
+and it does not. Chondrules are rigid mineral spheroids — they solidified from
+melt droplets, which is *why* they are round — and roundness is a feature
+separating them from irregular matrix. Warping them produces shapes that do not
+occur and would plausibly worsen the measured over-fragmentation (33 predicted
+objects vs 10 true, 2.06× the area). Same error class as intensity jitter:
+importing generic augmentation without checking domain validity.
+
+**[HONESTY] Augmentation cannot lower the MDE.** It multiplies pixel
+configurations, not independent chondrules. 3,000 transformed copies of 531
+slices still contain the same 142 chondrules and the same 19 in validation, so
+the 0.0142 floor is unchanged. For a *confidence* model — fit on the base model's
+errors — rotated copies of one chondrule are one chondrule's worth of
+information, and copies spanning fit and evaluation would be leakage.
+
+**[DEFINITION, Sky 2026-07-30] "Confidence model" and "learned error model" are
+the SAME THING in this project — one stage, not two.** The constitution had them
+split as v3+ (trust classifier) and v3++ (error model); §12 now records that
+stage 2 **is** the learned error model — a regression on the *magnitude* of the
+base model's error, threshold-independent, yielding an error bar. The trust
+classifier (`combine.ConfidenceModel`) is demoted to a **comparison arm** beside
+the free baselines and is not a separate deliverable.
+
+**`src/confidence_compare.py`** added: runs the bake-off across base models at a
+chosen recall target, holding split/candidates/prune fitting fixed, and reports
+each base map's **graded fraction** so "does the augmented model give its
+confidence model more to rank" is answered with a measurement. Reports the
+**error model** as the deliverable with trust/free beside it, plus explicit
+`error_beats_trust` / `error_beats_free` flags — never a collapsed "best learned"
+number, which would hide whether the deliverable actually won.
+
+### 2026-07-29 (later) — Complete-model contract; scaling-job triage; headline retrain
+
+*Spec (condensed) — **problem:** the handoff listed three tasks (verify the
+scaling job, retrain the headline model under the fixed tiler, commit the pending
+work) and Sky added a fourth: define "the complete model" ahead of a larger
+dataset. **Approach:** triage the running jobs before spending compute on them;
+back up any artifact a re-run would overwrite; define the contract as a spec +
+constitution amendment rather than code, and verify every decision-feeding claim
+adversarially before acting on it. **Acceptance:** each in-flight job's true state
+established from process/file evidence rather than inference; the headline delta
+reported against the reproducible baseline with its sign and its noise-floor flag;
+the contract recorded in three places that agree; every claim that failed
+verification retracted in writing.*
+
+**Constitution §12 — "the complete model" is now one named thing (Sky's call).**
+From here on it means the ordered composition of four pluggable stages: best base
+segmenter (high-recall operating point) → hierarchy filter → learned confidence
+model → z-layer neighbor confidence. Headline metric is **end-to-end test
+foreground IoU** against the plain-U-Net-at-matched-budget baseline, with **every
+stage independently ablatable** so a stage that does not earn its place is
+visible. Recorded as constitution §12 and
+`specs/2026-07-29-complete-model-contract/spec.md`.
+
+**[HONESTY] This is an architecture contract, not a performance claim.** At n=19
+val chondrules the MDE is 0.0142 IoU; the hierarchy measured **−0.012 vs the plain
+U-Net — inside that floor** — and is justified on **compute** (2.41× at target
+recall 0.999), not accuracy. The stages cannot currently be told apart from
+break-even; the larger dataset is what makes the measurement possible.
+
+**Scaling-curve triage — two jobs were in flight; the weaker one was stopped.**
+The `src/data_scaling.py` run (4 fractions × 3 seeds × 7,200 steps) had **died at
+run 1 of 12 with zero results saved** — `results/data_scaling_v2.json` has never
+existed. A separate scratchpad job (`data_scaling2.py`, PID 39992) was still alive
+after 71 min running a **single-seed 15,000-step** variant. It was killed, on
+these grounds: (a) **one seed per fraction**, so a trend cannot be separated from
+seed scatter (bootstrap SE ±0.0071 IoU); (b) it **bypasses
+`evaluate.run_and_score`** and the shared leakage checks; and (c) it writes a JSON
+**list** to the same path `src/data_scaling.py` reads with `.get("runs", [])` —
+reproduced: `AttributeError: 'list' object has no attribute 'get'`, which would
+have crashed the good module on its next start. The 12-run module is relaunched
+after the retrain (serialized deliberately — both jobs share one GPU).
+
+**[CORRECTION — the record of that kill was initially wrong.]** It was first
+reported here, and to Sky, that the killed job "had written nothing". **That is
+false**, found by the pre-commit overseer pass. The job's progress log was
+`results/data_scaling_v2.log`, not the `logs/data_scaling_v2.log` that was
+inspected, and it shows **one completed data point**:
+
+```
+[ds25] FULL-val IoU=0.4488 frozen thr=0.00
+ 25% ( 53 random slices): test IoU=0.2863 val=0.4488
+```
+
+with the 50% run 9/30 epochs in when it was killed. Two consequences: the claim
+that it "carries the exact confound `src/data_scaling.py` was written to remove"
+was also wrong — `src/data_scaling.py` names **two** defects (contiguous subsets
+*and* one seed), and **`53 random slices` shows this job had already fixed the
+contiguity confound**; only the single-seed defect remained, at a larger 15k
+budget. The kill still stands on grounds (a)–(c), but ~71 min of compute produced
+a real measurement. That measurement **was never written to JSON** (no
+`data_scaling_v2.json` exists anywhere on disk), so its only record is the log,
+which `.gitignore` excludes via `results/*.log` — it is therefore preserved in this
+commit as `results/prefix_tiler_backup/killed_data_scaling2_job.log`.
+
+**[HONESTY] Do not quote `test IoU=0.2863` as a scaling-curve point.** It is
+n=1 seed, at a 15k budget, measured under the **pre-fix tiler**, and it has no
+companion points to form a curve.
+
+**Headline retrain under the fixed tiler — in flight, result not yet in.**
+`python -m src.run_families run 0 60 500` → `unet2d_s30000`, 30,000 steps.
+Pre-fix artifacts were copied to `results/prefix_tiler_backup/` first
+(leaderboard, `final_pipeline.json`, the 213 MB probability map, and the four POC
+figures) because `run_and_score` overwrites the leaderboard row and the very
+probability map the POC figures were drawn from.
+
+**[HONESTY] Which baseline the delta will be quoted against.** Three different
+"headline" numbers exist for this model: **0.3168** (README, predates the
+threshold-grid fix *and* the tiler fix), **0.31601** (committed code, thr 0.0076,
+predates the tiler fix), and **0.31587** (`leaderboard_all.json`, thr 0.006). The
+apples-to-apples comparison for the retrain is against the reproducible ~0.3159–
+0.3160, not the published 0.3168; both will be reported with the sign.
+
+#### Adversarial verification of the contract — one claim retracted, four gaps found
+
+The first draft of the spec asserted that the z-neighbor stage was **not wired
+into `run_all`**. **That was false and is retracted.** It is step 4 of
+`confidence_sweep` (`pipeline_v2.py:573-574`), and `combine.z_agreement` is live in
+two further places — a bake-off free baseline (`confidence_bakeoff.py:120`) and
+feature 2 of `ConfidenceModel.build_features` (`combine.py:250`). All four stages
+were already wired. What is actually missing is the **composite**:
+
+- **`run_all` has never been executed** — no caller in the repo, `__main__` is
+  plumbing-only by its own comment, and `results_v2/` holds only
+  `split_multi.json`.
+- **The three post-base treatments never chain** — bake-off winner (`:520`),
+  prune (`:555`) and z-refine (`:574`) each read the same base map `pt`.
+- **Stages 0 and 1 are fused** — `stage2_sweep` only builds `HierMaskedRunner`
+  (`:454`), so no hierarchy-off arm exists and the ablation cannot be computed.
+- Hierarchy thresholds were checked and are **genuinely leakage-free** (val-fit,
+  frozen, decision rule reads raw only — `hierarchy.py:483-493`).
+
+#### 🔴 `recall_threshold` cannot reach any recall target — constitution §9 is not running
+
+`THR_GRID` floors at 2e-4 (`combine.py:34-38`) and `recall_threshold` **silently**
+returns that floor when a target is unreachable (`combine.py:551-553`). Measured on
+the real validation zone:
+
+```
+unet2d_s30000     targets 0.80/0.90/0.95/0.98 -> thr 2e-4, val recall 0.6014  (all four identical)
+hier_cnn_s30000   targets 0.80/0.90/0.95/0.98 -> thr 2e-4, val recall 0.5531  (all four identical)
+```
+
+A grid-floor defect, **not** model saturation — recall at `prob > 1e-7` is 0.985
+(unet2d) / 0.970 (hier_cnn). So the four prune targets in
+`results/final_pipeline.json` are one row repeated (0.3011→0.3131 ×4),
+`BAKEOFF_TARGET_RECALL = 0.95` actually ran at **0.60**, and **"over-predict, then
+prune" (constitution §9) has never actually executed.** The CHANGELOG already
+recorded the symptom; the cause is that the earlier fix moved the floor
+0.05 → 0.0002, still ~3 orders too high. Secondary defects recorded in the spec:
+unmatched threshold grids across arms, gains that conflate treatment with
+threshold change, ~12 test scorings flagged against a single-comparison MDE, `_gain`
+treating NaN as measurable, `out_dir` half-honored, and no collision guard in
+`alive_index`.
+
+**Sky's decisions:** (D1) extend `THR_GRID` to ~1e-7 log-spaced and make the
+fallback raise or flag rather than fail silently — this **invalidates** the prune
+and bake-off numbers in `final_pipeline.json`, which must be regenerated;
+(D2) chain order is **z-refine the probability map first, then prune**, so no stage
+binarizes early and the final threshold stays val-selected — deliberately *not*
+reusing `run_final.py`'s `prune_plus_z`, whose 0.3214 was test-selected with a
+hard-coded 0.5 cut; (D3) this session is **spec + commit only** — the composite and
+the D1 fix are the next session's first task, because building the contract on a
+base score that is currently being re-measured would have to be redone.
+
+#### 📊 HEADLINE RETRAIN RESULT — the halo crop LOWERED IoU but RAISED AUPRC
+
+`unet2d_s30000` retrained from scratch, 30,000 steps, same recipe
+(`phase1:p1_ctrl_b32`), scored through `evaluate.run_and_score`. Metrics reported
+together per constitution §5:
+
+| metric | pre-fix (halo accumulated) | post-fix (halo cropped) | Δ |
+|---|---|---|---|
+| **test IoU** | 0.31587 | **0.29409** | **−0.0218** |
+| Dice | 0.48009 | 0.45452 | −0.0256 |
+| precision | 0.41118 | 0.37188 | −0.0393 |
+| recall | 0.57674 | 0.58437 | +0.0076 |
+| **AUPRC** | 0.35151 | **0.42703** | **+0.0755** |
+| val-selected threshold | 0.006 | 0.002 | |
+| full-val IoU | 0.47696 | 0.44510 | −0.0319 |
+
+**Answering the handoff's question with its sign:** against the published 0.3168
+the delta is **−0.0227**; against the reproducible `leaderboard_all.json` value
+0.31587 it is **−0.0218**. Both **negative** — at the val-selected operating point
+the defective tiler was *flattering* the model. The magnitude is ~1.5× the MDE
+(0.0142), so it is nominally outside the noise floor.
+
+**[HONESTY] But "the bug was helping" is too simple, and this run does not settle
+it.** Four caveats, none of them small:
+
+1. **AUPRC, which is threshold-free, improved by +0.0755** — a 21% relative gain.
+   The probability map's *ranking quality* got substantially better while IoU at
+   the chosen operating point got worse. That is the signature of a better map
+   with a worse-transferring threshold, not of a degraded model.
+2. **This run still used TILED inference.** It started before tiling was removed,
+   so the old code was loaded in memory. It measures *halo-accumulated vs
+   halo-cropped tiling* — **not** whole-slice inference. The whole-image number
+   does not exist yet.
+3. **The threshold is NOT the explanation — this was checked directly.** The new
+   threshold 0.002 is exactly the floor of the grid `CNNRunner.fit` uses, which
+   looks like the truncated-grid defect logged three times before. It is not.
+   Re-selecting on the retrain's own saved val map with the grid extended to
+   **1e-7** returns the same 0.002 and the same test IoU 0.29409; the val-IoU
+   curve is flat over 5e-4…2e-2 with a true maximum at 0.002. Both operating
+   points (0.006 pre-fix, 0.002 post-fix) sit on that plateau, so **the −0.0218
+   is not a thresholding artifact.** *(This entry went through two wrong versions
+   before this one: first claiming 0.002 was an interior point of a grid that
+   isn't the one used, then accepting a review's inference that it was a clamp.
+   The measurement above settles it.)* n=1 seed and nondeterministic MPS remain as
+   confounds, so the delta is real but not cleanly attributable to the tiler.
+4. **Weights were not saved** — the `ckpt_dir` wiring landed after this job
+   launched — so re-scoring *this* model under whole-slice inference is not
+   possible. That comparison needs one more training run, which will now persist
+   its weights.
+
+**Do not update the README headline from this number yet.** It is a
+tiled-inference number for an inference path that no longer exists.
+
+#### 🔑 The halo crop made the probability map ~9× MORE SATURATED — this explains the rest
+
+Spotted in the regenerated POC figures (the probability panels look binary), then
+measured on the 111.6 M-pixel test map:
+
+| band | post-fix | pre-fix |
+|---|---|---|
+| < 1e-4 (hard 0) | **91.02%** | |
+| 1e-4 … 0.01 | 0.72% | |
+| 0.01 … 0.1 | 0.18% | |
+| **0.1 … 0.9 (graded)** | **0.32%** | **3.00%** |
+| 0.9 … 0.9999 | 0.51% | |
+| > 0.9999 (hard 1) | 7.25% | |
+
+The old tiler averaged each window's **zero-padded borders** into the output,
+manufacturing intermediate values. Cropping the halo removed that averaging, so
+the network's own near-binary outputs stand alone — the graded band shrank
+**3.00% → 0.32%**. Three things fall out of this:
+
+1. **It explains the flat threshold plateau.** With 98.3% of pixels outside
+   0.01–0.9, no threshold in that range can move IoU much — which is why
+   extending the selection grid to 1e-7 returned the identical 0.002 / 0.29409.
+2. **It explains AUPRC ↑0.0755 with IoU −0.0218.** Ranking improved (AUPRC reads
+   the ordering, including within the saturated masses — the maps are float16, so
+   subnormals preserve ordering down to ~6e-8), while calibration became more
+   extreme, so the achievable IoU at a single global threshold fell.
+3. **[CONTRACT IMPACT] It undermines Stage 2 and constitution §9.** A learned
+   confidence model and the free `|p − 0.5|` baseline both rank pixels by
+   gradation; with 0.32% graded there is almost nothing to rank. This is a
+   candidate explanation for the standing result that *no* confidence method beat
+   a zero-parameter baseline by more than 0.0005 IoU — not that confidence
+   modelling fails, but that this base map gives it nothing to work with.
+   "Over-predict, then prune" needs a confidence gradient to prune along.
+
+**Implication for the roadmap:** before Stage 2 can be judged, the base model
+needs to produce a *calibrated* map — e.g. a loss that does not drive logits to
+saturation, temperature scaling fit on val, or label smoothing. Also note
+`save_prob` stores **float16**, which barely represents the 1e-5…1e-7 range where
+this model's remaining signal lives; consider float32 for the val maps that
+meta-models are fit on.
+
+#### Pre-commit review found the halo crop was necessary but NOT sufficient
+
+*Spec (condensed) — problem: the pre-commit reviewer claimed the seam fix was
+incomplete. Approach: reproduce it independently before believing or dismissing
+it. Acceptance: a measurement that distinguishes "seam fixed" from "tiled
+inference correct".*
+
+**Independently reproduced.** `UNet2D` normalises with **GroupNorm**, which
+computes statistics over the spatial extent it is handed, so under tiling each
+window is normalised by its own statistics. Measured with the *fixed* (halo-
+cropping) tiler, untrained base=8 depth-4 `UNet2D`, non-constant 512×1024 image:
+
+```
+tile grid shifted 128 px, identical content:   mean|dp| 0.024   max 0.286
+tiled vs one whole-image forward pass:         mean|dp| 0.022   max 0.331
+largest 8 column jumps on a tile boundary:     1/8  (x=511 jump 1.1x median)
+```
+
+**The distinction that matters:** the *seam* — the boundary-localised artifact —
+really was fixed by cropping the halo (1/8, 1.1× median). What survived was
+**diffuse**: whole windows offset from one another. So "the seam is fixed" was
+true; "tiled inference is correct" was not. A constant-image test cannot see
+this because GroupNorm is degenerate on constant input — which is exactly what
+the original ✅ verification used.
+
+#### ❌ The whole-slice "fix" was WRONG and was reverted within the hour
+
+`predict_proba` was switched to a single whole-slice forward pass. It passed every
+check that was run on it — and **it destroyed trained-model quality.** Caught by
+the second pre-commit review, from the repo's own logs: `ds2_f25_s0`, identical
+config and seed, epoch for epoch:
+
+| epoch | tiled | whole-slice |
+|---|---|---|
+| 8 | 0.4476 | **0.0000** |
+| 11 | 0.4487 | **0.0004** |
+| 15 | 0.4403 | **0.0075** |
+
+0.0655 (its epoch-1 value) is the val foreground base rate — "predict everything
+positive". By epoch 8 the map was empty at every grid threshold. **Cause:** these
+nets train on 128×128 patches at `pos_frac=0.5`, and GroupNorm computes statistics
+over whatever extent it is handed. A whole 962×1450 slice is ~110× larger and ~5%
+foreground, so features land far outside the training distribution and the logits
+saturate. Worse, the collapse happens *inside* `fit()` — the per-epoch val pass
+uses `predict_proba`, so `best_state` and `best_thr` were being selected on
+collapsed maps.
+
+**Reverted.** Tiled inference (halo cropped) is the default again;
+`predict_proba_whole` is retained, documented as unusable for these models. The
+relaunched 10-h `data_scaling` job was killed 15 epochs in — it had written no
+results file, so nothing corrupt reached disk.
+
+**[LESSON] With GroupNorm plus patch training, the inference window size is a
+model hyperparameter, not an implementation detail.** Matching the training
+window's statistics matters more than eliminating tile-grid dependence, and the
+residual grid dependence is now **accepted and documented** rather than fixed —
+fixing it properly means changing the normalisation or the training window.
+
+**[LESSON] My verification was the wrong kind.** I checked an *untrained* net's
+probability differences and exact agreement with a hand-rolled forward pass. Those
+cannot detect a decision-boundary collapse — the identical blind spot I had just
+criticised the original constant-image test for. The check that would have caught
+it: compare val IoU across the two paths **on the same saved weights**.
+
+What the whole-slice path was verified to do correctly (all still true, and all
+irrelevant to whether it should be used):
+
+- output **exactly equals** a hand-rolled single forward pass (max |Δ| = 0.0);
+- shapes/ranges correct at 512×1024, 521×1250, 257×33, 100×140, 962×1450, and
+  for k=3 (2.5D);
+- interior shift-sensitivity **~3e-4 mean / 0.01 max**, vs 0.024 / 0.286 tiled
+  (~80× reduction). The residual is GroupNorm's *global* statistics changing
+  because replicate-padding replicates different edge columns — inherent to
+  GroupNorm, not to tiling. A residual measured with `np.roll` is dominated by
+  the wrap discontinuity (mean 1.16e-02 within 32 px of the seam vs 2.7e-04 in
+  the true interior), so that test overstates it.
+
+**[HONESTY]** These magnitudes come from an *untrained* base=8 net on synthetic
+data; the mechanism is architectural (it holds trained or not), but the size of
+the effect on the real trained model is not yet measured. `run_families` now
+persists weights (`ckpt_dir` defaults to `results/checkpoints`), which is what
+makes that measurement possible without retraining — previously weights died
+with the process.
+
+**Leaderboard isolation.** `evaluate.run_and_score` takes `leaderboard=False`,
+and `src/data_scaling.py` now passes it. Its 12 subset runs (25–100% of train, a
+reduced 7.2k budget) were about to be appended to `results/leaderboard_all.json`,
+whose regime string promises one split and which `fig_leaderboard` plots as a
+single ranked chart — a `ds2_*` row there reads as a model that beat or lost to
+`unet2d_s30000`. The same hazard applies to `pipeline_v2.stage2_sweep` on the v2
+split and is **not yet fixed**.
+
+**Scope note.** D3 said spec-and-commit-only. Sky reopened it to include these
+code fixes once the GroupNorm finding landed, because the retrain in flight would
+otherwise have measured the wrong inference path.
+
+### 2026-07-29 — Prepare for a second meteorite
+
+*Spec (condensed): the binding constraint is measured to be **data**, not
+method — 19 validation chondrules give a bootstrap SE of ±0.0071 IoU and a
+minimum detectable effect of ~0.014 IoU, which is larger than almost every
+method effect we measured. Approach: make adding a meteorite a config change,
+and fix the artifacts that would mislead that decision. Acceptance: a
+data-agnostic pipeline with a passing self-test; weights that survive their
+process; a scaling curve that is not confounded.*
+
+- **Model weights now persist** (`CNNRunner.save_checkpoint` /
+  `load_checkpoint`, plus a `ckpt_dir=` constructor argument that auto-saves at
+  the end of `fit`). This clears the known issue that the sweep saved
+  probabilities but not weights, which is why v4 unlabeled inference could
+  never be produced. The **validation-selected threshold travels inside the
+  checkpoint**, so a reloaded model cannot be scored at an arbitrary operating
+  point. Verified by round-trip: reloaded predictions are bit-identical
+  (`max |p1-p2| = 0.0`), the threshold matches exactly, and a mismatched `k`
+  is rejected rather than silently accepted.
+- **`src/data_scaling.py` — the corrected scaling test.** The existing
+  `results/data_scaling.json` is **confounded and should not be quoted**: it
+  reports 0.2421 / 0.2972 / 0.2593 / 0.2314 for 25/50/75/100% of the training
+  slices — non-monotonic and *worst at 100% data*. Two defects: subsets were
+  **contiguous** (so "25% of the data" was also "one region of the meteorite",
+  varying difficulty and volume together), and there was **one seed per point**
+  against a seed-to-seed scatter we never measured. The replacement draws
+  subsets **at random across the whole train slab** (verified: a 25% subset
+  spans slices 1–211 of 0–212, so region is decoupled from volume) and runs
+  **3 seeds per fraction** at a fixed 7,200-step budget, reporting mean ± SD.
+  Absolute IoU will sit below the 30k headline by construction — the curve is
+  to be read for shape, not height. *Status as of the later 2026-07-29 entry:
+  **never completed a run.** It died at run 1 of 12 having saved nothing, so
+  `results/data_scaling_v2.json` does not exist and `data_scaling.json` is
+  superseded in intent only, not in fact.*
+- **🔴 TILED-INFERENCE SEAM BUG — found, confirmed, fixed.**
+  `CNNRunner.predict_proba` tiled at `tile=256, halo=32` but **accumulated the
+  halo instead of cropping it**. With stride equal to tile, overlap was confined
+  to 64-px bands where the divisor jumped 1 → 2 → 4 discontinuously, and the
+  averaged-in values were each window's *zero-padded* border pixels, computed
+  with 32 px of context against a depth-4 U-Net's far larger receptive field.
+  - *Found* by rendering real predictions (`poc_images`): a predicted chondrule
+    stopped on a perfectly straight vertical edge (TP 14193 / FN 15723 / FP 1),
+    and probability maps showed rectangular bands across round chondrules.
+  - *Confirmed* independently: on every CNN-family artifact, **5–7 of the 8
+    largest per-column jumps land exactly on a window boundary** (223, 287,
+    479, 543, 735, 799, 991, 1055); the three GNN models, which bypass this
+    tiler, score **0–1 of 8** with a different periodicity. That control is
+    what makes the attribution airtight.
+  - *Not* the classic bugs: accumulator/count indexing was correct, there was
+    no coverage gap, and normalization is per-volume. It was the blend itself.
+  - *Fixed* by discarding the halo so cores tile the slice exactly once
+    (`cnt == 1` everywhere, asserted). Edge windows are also replicate-padded
+    to a multiple of `PAD_MULT = 32`, because the last window (202 px) was not
+    a multiple of the encoder's downsampling factor and the decoder padded it
+    asymmetrically. Verified: a constant-logit model now returns an **exactly
+    constant** map (spread 0.000e+00, was non-zero), and a real depth-4 U-Net on
+    a constant image shows **0/8** boundary-aligned jumps.
+  - **⚠️ Every CNN/transformer/modern-conv number in this repo predates the fix,
+    including the 0.3168 headline.** They were measured with a defective blend
+    and are unreliable *in an unknown direction* — the sign is not yet
+    established. Because weights were never persisted, corrected numbers
+    require **retraining**, not re-inference.
+- **POC imagery** (`src/poc_images.py`, 4 figures) — rendered from the real
+  saved probability maps of `unet2d_s30000` on held-out test slices, at the
+  validation-selected threshold, not illustrated. Measured en route:
+  **96.0% adjacent-slice prediction agreement** (the signal z-refinement is
+  built on), and an **oracle** droppable fraction rising **60.0% → 89.1%** from
+  20 to 6000 superpixels, against the learned drop rule's 58.5% — that gap is
+  the hierarchy's remaining headroom, and it is large.
+- **`src/pipeline_v2.py` — the data-agnostic pipeline.** `MeteoriteSource` /
+  `build_multi_split` / `power_report` / `stage2_sweep` / `confidence_sweep` /
+  `run_all`. Adding a meteorite is a config change. Self-test output:
+  `531/531 pairs OK`, `13 straddler instance(s) resolved to majority slab;
+  871822 voxels ignored; 0 chondrules span 2+ zones`, zone counts summing to
+  the band, no slice index in two zones.
+- **Two defects caught and fixed in that pipeline before it was trusted:**
+  - *Straddler resolution was missing* — the first draft relied on the buffer
+    alone. `split.py` measured chondrule z-extents reaching **70 band-slices**
+    against a **12-slice** buffer, so chondrules could appear in two core
+    zones. Now reuses the audited same-id-CC + majority-slab rule, with the
+    post-hoc recount assertion. **P1 violation, caught before use.**
+  - *Chondrule counting used plain binary CC*, which fuses touching chondrules
+    — the same failure that once dropped 53.6% of positives. It reported
+    **87** where the same-id rule reports **142** (a 39% shortfall). This feeds
+    `power_report`'s `n`, so every minimum-detectable-effect figure would have
+    been wrong. Now uses `split.instance_label`; the corrected counts are
+    **train 81 / val 32 / test 29 = 142**, matching the known total exactly.
+- **Free statistical power from slab placement.** The v2 split puts
+  **32 chondrules in validation** versus the frozen split's 19, which lowers
+  the minimum detectable effect from **0.0142 to 0.0109 absolute IoU** with no
+  new data. It is a trade, not a free lunch: training chondrules fall from 99
+  to 81, and the two splits' scores are not comparable to each other.
+- **`hier_cnn` at a matched 30,000-step budget: test IoU 0.3037**
+  (val 0.4460, threshold 0.000177, 41.5% of pixels alive), up from 0.2695 at
+  8k. Against the plain U-Net's 0.3159 at the same budget that is **−0.012
+  IoU — inside the ±0.014 noise floor**. The honest reading: the hierarchy
+  buys a ~2.4× reduction in the area the CNN must process at no *measurable*
+  accuracy cost. It is a compute optimization, and we cannot currently
+  distinguish it from break-even.
 
 ### 2026-07-23 — Full model sweep, budget curve, confidence pipeline
 
@@ -205,6 +1023,17 @@ validation; the model itself was never tuned on test.
   (0.4375 vs 0.4508). So augmentation was never orientation-sensitivity — it
   simply needed steps to amortize. It still does not win, so the no-aug recipe
   stands, but the earlier round-2 reading is now superseded.
+
+  **[AMENDED 2026-07-30 — this conclusion was drawn on VALIDATION only, and TEST
+  disagrees.]** The 30,000-step arm continues the val trend exactly as predicted
+  (0.165 → 0.0133 → **−0.0157**, i.e. augmentation overtakes on val), but on TEST
+  the gap does not close at all: **−0.0505 at 7.2k and −0.0501 at 30k**, both
+  threshold-robust. Within the 30k run the budget reading also still holds — the
+  control peaks at epoch 21/60 and decays, while the augmented arm peaks at 43/60
+  and is still near its optimum at the end. So "augmentation simply needed steps
+  to amortize" is supported by every validation-side measurement and refuted by
+  every test-side one. **The hypothesis is CONTESTED, not confirmed.** Do not
+  quote this bullet without the amendment. n=1 seed throughout, on both sides.
 - **Threshold grid was truncated (fixed).** Both long runs selected exactly
   `thr=0.05`, the grid minimum — a parameter pinned to its boundary, meaning the
   true optimum lay outside the search and those two test numbers are likely

@@ -81,11 +81,19 @@ def append_leaderboard(entry, path=LEADERBOARD):
     return rows
 
 
-def run_and_score(runner, data=None, root=".", extra=None, save_prob=None):
+def run_and_score(runner, data=None, root=".", extra=None, save_prob=None,
+                  leaderboard=True):
     """Fit the runner, score test once, append to the leaderboard.
 
     Returns the leaderboard row (or an {"error": ...} row if the run failed —
     a single family blowing up must not abort the sweep).
+
+    `leaderboard=False` scores the run but keeps it OUT of
+    `results/leaderboard_all.json`. [MUST] Pass it whenever the run is not
+    comparable to the frozen-split roster — a different split, a data subset, or
+    a reduced budget. The leaderboard's own regime string promises one split and
+    `fig_leaderboard` plots every row in it as one ranked chart, so a
+    mixed-regime row there is read as a comparable model and misquoted.
     """
     d = data or load(root)
     t0 = time.time()
@@ -122,5 +130,6 @@ def run_and_score(runner, data=None, root=".", extra=None, save_prob=None):
     row["sec"] = round(time.time() - t0, 1)
     if extra:
         row.update(extra)
-    append_leaderboard(row)
+    if leaderboard:
+        append_leaderboard(row)
     return row

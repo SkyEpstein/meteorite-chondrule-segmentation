@@ -1,0 +1,322 @@
+{
+  "winner": "unet2d_s30000",
+  "selected_on": "FORCE_MODEL override \u2014 NOT val-selected. hrnet_lite ranked #1 on validation (0.47794) vs this model (0.47696); the two are statistically tied (bootstrap 95% CI [-0.013,+0.015], P=0.50) and Sky chose the sweep's best model, which is a TEST-informed tiebreak. See CHANGELOG KNOWN ISSUES.",
+  "ranking": [
+    {
+      "model": "hrnet_lite",
+      "val_iou": 0.47793576796309173,
+      "threshold": 0.2
+    },
+    {
+      "model": "unet2d_s30000",
+      "val_iou": 0.47695969084039247,
+      "threshold": 0.05
+    },
+    {
+      "model": "unet2d",
+      "val_iou": 0.47695969084039247,
+      "threshold": 0.05
+    },
+    {
+      "model": "swin_lite",
+      "val_iou": 0.45945455266454255,
+      "threshold": 0.5499999999999999
+    },
+    {
+      "model": "tiramisu",
+      "val_iou": 0.4300314013549699,
+      "threshold": 0.49999999999999994
+    },
+    {
+      "model": "unet25d_k5",
+      "val_iou": 0.4268490997394115,
+      "threshold": 0.49999999999999994
+    },
+    {
+      "model": "attention_unet",
+      "val_iou": 0.41842538733878365,
+      "threshold": 0.3
+    },
+    {
+      "model": "resunet",
+      "val_iou": 0.416827745961967,
+      "threshold": 0.25
+    },
+    {
+      "model": "axial_unet",
+      "val_iou": 0.41571770397460345,
+      "threshold": 0.05
+    },
+    {
+      "model": "gnn_graph_unet",
+      "val_iou": 0.4075202277825622,
+      "threshold": 0.44999999999999996
+    }
+  ],
+  "baseline_test": {
+    "iou": 0.31675802301785233,
+    "dice": 0.4811180451999536,
+    "precision": 0.41471542681209034,
+    "recall": 0.5728387548099685,
+    "tp": 3369618,
+    "fp": 4755515,
+    "fn": 2512697,
+    "auprc": 0.31580141582366744,
+    "ece": 0.05086588226371545,
+    "threshold": 0.05,
+    "per_slice_iou_median": 0.2950786467316614
+  },
+  "z_refine": {
+    "mode": "mean",
+    "k": 7,
+    "thr": 0.15,
+    "val_iou": 0.49833549605614474,
+    "test": {
+      "iou": 0.2972275181695155,
+      "dice": 0.4582504055864088,
+      "precision": 0.35990242164399017,
+      "recall": 0.6305587171037254,
+      "tp": 3709145,
+      "fp": 6596829,
+      "fn": 2173170,
+      "auprc": 0.41210925345234595,
+      "ece": 0.035738776722863866,
+      "threshold": 0.15,
+      "per_slice_iou_median": 0.2866195084428801
+    }
+  },
+  "bakeoff": [
+    {
+      "name": "hist_gb",
+      "task": "error",
+      "pruned_val_iou": 0.4555816185529818,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.000533927584965399,
+      "cutoff": 0.7083333333333333,
+      "fit_sec": 0.4,
+      "ranking_metric": 0.34255948134973296,
+      "higher_is_worse": true
+    },
+    {
+      "name": "random_forest",
+      "task": "error",
+      "pruned_val_iou": 0.4555701610879219,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.000522470119905527,
+      "cutoff": 0.7836520001292229,
+      "fit_sec": 41.6,
+      "ranking_metric": 0.7405898911397147,
+      "higher_is_worse": true
+    },
+    {
+      "name": "extra_trees",
+      "task": "error",
+      "pruned_val_iou": 0.4553338263203347,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.00028613535231830634,
+      "cutoff": 0.7449926298820824,
+      "fit_sec": 2.7,
+      "ranking_metric": 0.7270932060929919,
+      "higher_is_worse": true
+    },
+    {
+      "name": "mlp",
+      "task": "error",
+      "pruned_val_iou": 0.45506848589145116,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 2.0794923434763746e-05,
+      "cutoff": 0.9583333333333333,
+      "fit_sec": 3.7,
+      "ranking_metric": 0.386901020962334,
+      "higher_is_worse": true
+    },
+    {
+      "name": "hist_gb",
+      "task": "trust",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.001547441235743463,
+      "fit_sec": 1.7,
+      "ranking_metric": 0.9398071209396455,
+      "higher_is_worse": false
+    },
+    {
+      "name": "random_forest",
+      "task": "trust",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.0,
+      "fit_sec": 4.6,
+      "ranking_metric": 0.9389535577153298,
+      "higher_is_worse": false
+    },
+    {
+      "name": "extra_trees",
+      "task": "trust",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.001639085472561419,
+      "fit_sec": 0.6,
+      "ranking_metric": 0.9360005400867777,
+      "higher_is_worse": false
+    },
+    {
+      "name": "logistic",
+      "task": "trust",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 1.9966755679390324e-11,
+      "fit_sec": 0.2,
+      "ranking_metric": 0.8975471652971556,
+      "higher_is_worse": false
+    },
+    {
+      "name": "mlp",
+      "task": "trust",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.00035118774394504726,
+      "fit_sec": 19.7,
+      "ranking_metric": 0.9332221143586217,
+      "higher_is_worse": false
+    },
+    {
+      "name": "ridge",
+      "task": "error",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 1.0,
+      "fit_sec": 0.0,
+      "ranking_metric": 0.3598149616093423,
+      "higher_is_worse": true
+    },
+    {
+      "name": "margin",
+      "task": "free",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": -0.0,
+      "fit_sec": 0.0,
+      "ranking_metric": 0.9308435145614797,
+      "higher_is_worse": true
+    },
+    {
+      "name": "margin_trust",
+      "task": "free",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.0,
+      "fit_sec": 0.0,
+      "ranking_metric": 0.6349345366661825,
+      "higher_is_worse": false
+    },
+    {
+      "name": "raw_prob_uncertainty",
+      "task": "free",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.5,
+      "fit_sec": 0.0,
+      "ranking_metric": 0.9308435145614797,
+      "higher_is_worse": true
+    },
+    {
+      "name": "z_agreement",
+      "task": "free",
+      "pruned_val_iou": 0.4550476909680164,
+      "unpruned_val_iou": 0.4550476909680164,
+      "gain": 0.0,
+      "cutoff": 0.3333333134651184,
+      "fit_sec": 0.0,
+      "ranking_metric": 0.6353227954983085,
+      "higher_is_worse": false
+    }
+  ],
+  "fp_prune_sweep": [
+    {
+      "target_recall": 0.8,
+      "threshold": 0.0002,
+      "val_recall": 0.6013652136970983,
+      "val_iou": 0.48651243466291255,
+      "unpruned_test": 0.30112705471436546,
+      "test": {
+        "iou": 0.3131049046787629,
+        "dice": 0.4768924456273517,
+        "precision": 0.42325436275903616,
+        "recall": 0.5460982623337921,
+        "tp": 3212322,
+        "fp": 4377256,
+        "fn": 2669993
+      }
+    },
+    {
+      "target_recall": 0.9,
+      "threshold": 0.0002,
+      "val_recall": 0.6013652136970983,
+      "val_iou": 0.48651243466291255,
+      "unpruned_test": 0.30112705471436546,
+      "test": {
+        "iou": 0.3131049046787629,
+        "dice": 0.4768924456273517,
+        "precision": 0.42325436275903616,
+        "recall": 0.5460982623337921,
+        "tp": 3212322,
+        "fp": 4377256,
+        "fn": 2669993
+      }
+    },
+    {
+      "target_recall": 0.95,
+      "threshold": 0.0002,
+      "val_recall": 0.6013652136970983,
+      "val_iou": 0.48651243466291255,
+      "unpruned_test": 0.30112705471436546,
+      "test": {
+        "iou": 0.3131049046787629,
+        "dice": 0.4768924456273517,
+        "precision": 0.42325436275903616,
+        "recall": 0.5460982623337921,
+        "tp": 3212322,
+        "fp": 4377256,
+        "fn": 2669993
+      }
+    },
+    {
+      "target_recall": 0.98,
+      "threshold": 0.0002,
+      "val_recall": 0.6013652136970983,
+      "val_iou": 0.48651243466291255,
+      "unpruned_test": 0.30112705471436546,
+      "test": {
+        "iou": 0.3131049046787629,
+        "dice": 0.4768924456273517,
+        "precision": 0.42325436275903616,
+        "recall": 0.5460982623337921,
+        "tp": 3212322,
+        "fp": 4377256,
+        "fn": 2669993
+      }
+    }
+  ],
+  "best_prune_by_val": 0.8,
+  "prune_plus_z": {
+    "iou": 0.32141190848104867,
+    "dice": 0.4864674011459588,
+    "precision": 0.4418034214545588,
+    "recall": 0.5411775805953949,
+    "tp": 3183377,
+    "fp": 4022038,
+    "fn": 2698938
+  },
+  "runtime_sec": 1272.4,
+  "selection_caveat": "best-of-40, selection-biased; optimistic by ~0.02-0.03"
+}

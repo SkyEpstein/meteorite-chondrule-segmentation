@@ -56,14 +56,60 @@ def best_recipe(default=None):
     return best
 
 
+_AUG_WORDS = {"off": False, "none": False, "false": False, "0": False,
+              "geom": "geom", "full": True, "true": True, "1": True}
+
+
+def _resolve_aug(rec):
+    """Resolve the augmentation setting from `--aug=` or the recipe.
+
+    [MUST] Map the string EXPLICITLY. `_AUG or bool(rec[...])` cannot express
+    "off": every non-empty string is truthy, and `PatchSet` treats anything
+    truthy that is not exactly `"geom"` as FULL augmentation *including intensity
+    jitter* — the jitter measured to halve val IoU (0.387 -> 0.202) because
+    absolute intensity is the discriminative signal here. So `--aug=off` would
+    have silently turned augmentation fully ON, under a run named `..._augoff`.
+    """
+    a = globals().get("_AUG")
+    if a is None:
+        # [MUST] Route the RECIPE value through the same map. `bool(rec["aug"])`
+        # turned a recipe of aug="geom" into full augmentation WITH jitter,
+        # which is the identical defect this function exists to prevent — just
+        # on the other branch. p1_geom_b32.json really does carry aug="geom".
+        ra = rec.get("aug", True)
+        if isinstance(ra, str):
+            if ra not in _AUG_WORDS:
+                raise SystemExit(f"recipe has unknown aug={ra!r}")
+            return _AUG_WORDS[ra]
+        return bool(ra)
+    if a not in _AUG_WORDS:
+        raise SystemExit(f"unknown --aug={a!r}; choose from "
+                         f"{sorted(_AUG_WORDS)}")
+    return _AUG_WORDS[a]
+
+
 def families():
     """(name, kind, builder) for every runnable family."""
     from .models_cnn import (UNet2D, AttentionUNet2D, CNNRunner, dice_loss,
-                             tversky_loss, bce_loss, focal_loss)
+                             tversky_loss, bce_loss, focal_loss, dscpp_loss)
     rec = best_recipe()
     losses = {"dice": dice_loss, "tversky": tversky_loss,
-              "bce": bce_loss, "focal": focal_loss}
-    loss = losses.get(rec.get("loss", "dice"), dice_loss)
+              "bce": bce_loss, "focal": focal_loss, "dscpp": dscpp_loss}
+    # `_LOSS` overrides the recipe's loss for a calibration bake-off arm, so the
+    # arm is otherwise IDENTICAL to the headline run (same builder, recipe,
+    # budget, seed). The name gets a suffix for the same reason the budget
+    # override does — the leaderboard replaces rows by model name, and an
+    # unsuffixed arm would silently overwrite the row it is meant to be
+    # compared against.
+    loss_name = globals().get("_LOSS") or rec.get("loss", "dice")
+    if loss_name not in losses:
+        # [MUST] Hard-fail. A silent `.get(..., dice_loss)` fallback meant a
+        # typo like `--loss=dscp` produced a run NAMED `..._dscp` and TRAINED
+        # with Dice — a leaderboard row and a probability file that lie about
+        # the arm they represent, indistinguishable after the fact.
+        raise SystemExit(f"unknown loss {loss_name!r}; choose from "
+                         f"{sorted(losses)}")
+    loss = losses[loss_name]
     base = int(rec.get("base", 32))
 
     def mk(ctor, k=1, name=None, epochs=10, steps=300):
@@ -75,13 +121,17 @@ def families():
         # curve those runs exist to measure.
         if "_BUDGET" in globals():
             name = f"{name}_s{ep * st}"
+        if globals().get("_LOSS"):
+            name = f"{name}_{globals()['_LOSS']}"
+        if globals().get("_AUG"):
+            name = f"{name}_aug{globals()['_AUG']}"
 
         def _build():
             return CNNRunner(name, lambda in_ch: ctor(in_ch), loss, k=k,
                              epochs=ep, steps_per_epoch=st,
                              lr=float(rec.get("lr", 3e-4)),
                              weight_decay=float(rec.get("wd", 0.0)),
-                             augment=bool(rec.get("aug", True)),
+                             augment=_resolve_aug(rec),
                              pos_frac=float(rec.get("pos_frac", 0.5)),
                              val_stride=6)
         return _build
@@ -130,6 +180,22 @@ def families():
 
 
 def main():
+    # [MUST] Parse overrides BEFORE building the family list. `families()` binds
+    # the loss and computes the suffixed name at construction time, so building
+    # first and setting the globals afterwards silently discards them — the run
+    # would train with the recipe's Dice loss under the BARE name `unet2d`,
+    # replacing the headline leaderboard row and overwriting
+    # results/probs/unet2d.npy. Only the budget path used to rebuild, so the bug
+    # was invisible whenever `<epochs> <steps>` happened to be supplied.
+    for a in [x for x in sys.argv if x.startswith("--")]:
+        k, _, v = a[2:].partition("=")
+        if k == "loss":
+            globals()["_LOSS"] = v
+        elif k == "aug":
+            globals()["_AUG"] = v
+        else:
+            raise SystemExit(f"unknown option {a}")
+    sys.argv = [x for x in sys.argv if not x.startswith("--")]
     fams = families()
     if len(sys.argv) > 1 and sys.argv[1] == "list":
         print(f"recipe: {best_recipe().get('_source')}")
@@ -154,6 +220,12 @@ def main():
         rec = best_recipe()
         print(f"=== family {idx}: {nm} | recipe {rec.get('_source')} ===", flush=True)
         runner = build()
+        # Persist weights. Without this the trained model dies with the process,
+        # which is why re-scoring a finished run (e.g. under a corrected
+        # inference path) previously meant retraining from scratch.
+        if hasattr(runner, "ckpt_dir") and runner.ckpt_dir is None:
+            runner.ckpt_dir = "results/checkpoints"
+            os.makedirs(runner.ckpt_dir, exist_ok=True)
         row = evaluate.run_and_score(runner, extra={"recipe": rec.get("_source")},
                                      # Use the RUNNER's name, not the family label:
                                      # budget-override runs carry an `_sNNNNN`

@@ -49,7 +49,14 @@ def fig_leaderboard():
     ax.axvline(0.130, color="#BDBDBD", ls=":", lw=1.4, label="intensity floor 0.130")
     ax.axvline(0.92, color="crimson", ls="--", lw=2, label="annotation ceiling ~0.92")
     ax.set_xlabel("test foreground IoU"); ax.set_xlim(0, 1.0)
-    ax.set_title("All models — leakage-free test slab (ALH 83010)")
+    # [MUST] The bars are NOT mutually comparable. Only `unet2d_s30000` has been
+    # re-scored under the fixed tiler (0.29409); the other ~40 rows predate it.
+    # Ranked without this caveat the chart reads "unet2d_s15000 (0.3089, pre-fix)
+    # beats unet2d_s30000 (0.29409, post-fix)", i.e. 15k steps beating 30k —
+    # which is an artifact of mixing inference regimes, not a result.
+    ax.set_title("All models — leakage-free test slab (ALH 83010)\n"
+                 "MIXED INFERENCE REGIMES: only unet2d_s30000 is post-tiler-fix; "
+                 "cross-row ranking is NOT valid", fontsize=10)
     ax.legend(loc="lower right", fontsize=8)
     for i, v in enumerate(ious):
         ax.text(v + .006, i, f"{v:.3f}", va="center", fontsize=7)
@@ -82,10 +89,49 @@ def fig_budget():
     ax.axhline(0.203, color=C_CLASSIC, ls="--", lw=1.5, label="classical-ML 0.203")
     ax.set_xscale("log"); ax.set_xlabel("training steps (log)")
     ax.set_ylabel("test foreground IoU")
-    ax.set_title("Budget scaling — training longer beat every architecture")
+    ax.set_title("Budget scaling — MIXED INFERENCE REGIMES, DO NOT QUOTE\n"
+                 "only the 30k point is post-tiler-fix (0.29409); the rest predate it",
+                 fontsize=10)
     ax.grid(alpha=.3); ax.legend(fontsize=9)
     plt.tight_layout(); plt.savefig(f"{FIG}/budget_scaling.png", dpi=120); plt.close()
     print("  budget_scaling.png")
+
+
+def fig_data_scaling():
+    """Corrected scaling curve, with the confounded original shown for contrast."""
+    d = _load("results/data_scaling_v2.json")
+    if not d or not d.get("summary"):
+        return
+    s = d["summary"]
+    xs = [r["n_slices"] for r in s]
+    mu = [r["test_iou_mean"] for r in s]
+    sd = [0.0 if r["test_iou_sd"] != r["test_iou_sd"] else r["test_iou_sd"]
+          for r in s]
+
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    ax.errorbar(xs, mu, yerr=sd, fmt="o-", lw=2, ms=7, capsize=4,
+                color=C_BEST, label="random subsets, 3 seeds (mean ± SD)")
+    for r in s:                                   # every individual seed
+        ax.scatter([r["n_slices"]] * len(r["test_iou_all"]), r["test_iou_all"],
+                   s=18, color=C_BEST, alpha=.35, zorder=3)
+
+    old = _load("results/data_scaling.json")
+    if old:
+        ax.plot([r["n_slices"] for r in old], [r["test_iou"] for r in old],
+                "s--", lw=1.5, ms=6, color=C_CLASSIC, alpha=.8,
+                label="superseded: contiguous subsets, 1 seed")
+
+    # The measurement floor. Effects below this are unresolvable at n=19.
+    ax.axhspan(min(mu) - 0.0071, min(mu) + 0.0071, color="k", alpha=.05)
+    ax.set_xlabel("annotated training slices (of 213 available)")
+    ax.set_ylabel("test foreground IoU")
+    ax.set_title("Does more annotated data help?\n"
+                 f"fixed {d.get('runs', [{}])[0].get('steps', '?')}-step budget; "
+                 "shape, not height (30k-step run scores 0.29409 post-tiler-fix; "
+                 "the older 0.3159/0.3168 are WITHDRAWN)", fontsize=10)
+    ax.grid(alpha=.3); ax.legend(fontsize=9)
+    plt.tight_layout(); plt.savefig(f"{FIG}/data_scaling.png", dpi=120); plt.close()
+    print("  data_scaling.png")
 
 
 def fig_pipeline():
@@ -212,8 +258,8 @@ def fig_qualitative():
 def main():
     os.makedirs(FIG, exist_ok=True)
     print("figures:")
-    for fn in (fig_leaderboard, fig_budget, fig_pipeline, fig_bakeoff,
-               fig_hierarchy, fig_qualitative):
+    for fn in (fig_leaderboard, fig_budget, fig_data_scaling, fig_pipeline,
+               fig_bakeoff, fig_hierarchy, fig_qualitative):
         try:
             fn()
         except Exception as e:
