@@ -1,110 +1,139 @@
-# Session handoff, 2026-08-01
+# Session handoff, 2026-08-02
 
-Supersedes the 2026-07-29 handoff entirely. Read [CHANGELOG.md](CHANGELOG.md)'s
-KNOWN ISSUES block before quoting any number.
+Supersedes the 2026-08-01 handoff. Read [CHANGELOG.md](CHANGELOG.md)'s KNOWN
+ISSUES block before quoting any number.
 
-**Nothing is running.** No background jobs, no suspended processes. The machine
-is idle.
+## A JOB IS RUNNING RIGHT NOW
 
-## Sky's current position
+```
+python -m src.pretrained_probe --arm=pretrained     PID 81137
+log: logs/pretrain_probe.log       ~13/60 epochs at handoff, ~100-150 s/epoch
+```
 
-> "I think there is potential, we just need more data."
+It survives the session that started it. **Check it first:**
+`tail -3 logs/pretrain_probe.log` and `pgrep -f pretrained_probe`.
 
-And, separately, on using a pretrained model:
+When it finishes it writes `results/pretrained_probe.json` and a leaderboard row
+`resunet18_pretrained_s30000`. **Then run the control arm:**
 
-> "The end goal is not pretrained. The pretrained model having better success
-> will just show us we need more data."
+```
+python -m src.pretrained_probe --arm=scratch
+```
 
-That reframing matters: **pretraining is an instrument, not a deliverable.**
-Pretraining substitutes for data, so the gap between a pretrained encoder and the
-from-scratch model on the same 213 slices is an *estimate of how much data-driven
-headroom exists*. Sky's chosen next action is **commit, then test pretraining on
-those terms**. The sharper version, if it can be afforded: measure the pretrained
-model's own scaling curve, so the answer is a substitution rate ("pretraining is
-worth roughly Nx our data") rather than a single delta.
+One at a time. Do not run both together (see "respect the machine" below).
 
-## The one thing that matters most
+## What the probe is for, and why the control arm is not optional
 
-**Almost nothing measured this session cleared the noise floor.** MDE is 0.0142
-IoU at 19 validation chondrules. Against that: the prune gain +0.0084, every
-confidence model 1e-9 to 1e-5, z-refine inside the floor. The recurring failure
-mode has been *inability to measure*, not absence of effect.
+Sky, 2026-08-01: *"The end goal is not pretrained. The pretrained model having
+better success will just show us we need more data."*
 
-The two results that DID clear it were both negative: geometry augmentation
--0.0501 test IoU, and the image confidence model -0.1769 (the latter confounded,
-see below).
+Pretraining substitutes for data, so the gap between an ImageNet encoder and the
+**identical architecture randomly initialised** estimates how much data-driven
+headroom exists. It is an instrument, not a candidate model.
 
-## Where the numbers stand
+Both arms are ResNet-18 encoder + U-Net decoder, 14.0M params, differing ONLY in
+encoder initialisation (verified: conv1 weights differ, and the pretrained arm's
+conv1 is bit-identical to torchvision's ImageNet tensor). Read the results as:
 
-| | test IoU | note |
-|---|---|---|
-| CNN `unet2d_s30000` | **0.29409** | the current base model, post-tiler-fix |
-| + prune (margin baseline) | 0.3028 | +0.0084 on test, but **-0.0071 on val**: below the floor, sign-flipped |
-| CNN + geometry augmentation | 0.24404 | -0.0501, replicated at two budgets, n=1 seed each |
-| classical `plus3_ws` | 0.2185 | **defect-contaminated**, see KNOWN DEFECTS |
-| classical `plus3` | 0.2127 | +0.0099 over the 18-feature baseline, paired comparison |
-| classical `base18` | 0.2028 | reproduces the published 0.203 baseline |
-| annotation ceiling | 0.9226 | so we are at ~32% of achievable |
+| comparison | measures |
+|---|---|
+| pretrained − scratch | **pretraining = the data-starvation estimate** |
+| scratch − 0.29409 | architecture (ResNet-UNet vs plain U-Net), a separate question |
+| pretrained − 0.29409 | both mixed; NOT interpretable alone |
 
-## Decisions Sky made, still open (do NOT re-ask, DO act on)
+**[MUST] Judge on TEST IoU, not validation.** Sky, 2026-08-02: "the real test is
+the test IoU". This project has had **eight val/test sign flips**; geometry
+augmentation won val by +0.0157 and lost test by −0.0501. Each arm scores test
+once through `evaluate.run_and_score` with the threshold frozen on val.
 
-1. **The complete model** is constitution §12: seven stages, hierarchy first,
-   pixel dropping last on three stacked confidence signals. That supersedes the
-   four-stage base-first order still written in the spec and ROADMAP.
-2. **"Both, and let validation decide"** on the classical map: build (a) a CNN
-   taking the cleaned channels directly and (b) a CNN cascaded on the classical
-   probability, then compare on val. **Neither arm has been run.** The cascade
-   channel is ready (`results/probs/classical_xf_*.npy`, 5-fold, all 213 train
-   slices). Arm (a) needs `CNNRunner`'s aux path widened from 1 channel to N.
-3. **Cross-fit the CNN** so the error model gets more than 28 slices.
-   `src/cnn_crossfit.py` is written and its three blocking defects are fixed, but
-   it has **never completed a run** (~6 h).
-4. **Fix `error_cnn`'s unweighted sampling, then re-run it** before trusting its
-   -0.1769. Not done.
+**How big a gap counts as evidence, decided BEFORE the numbers arrived:** both
+arms are n=1 seed, and `src/data_scaling.py` states single-seed differences of
+0.03-0.06 cannot be separated from run-to-run scatter. So a test gap under ~0.05
+is ambiguous; 0.10 or more is hard to explain as scatter and would genuinely
+support "data is the binding constraint".
 
-## What is confounded and must not be cited as-is
+## Where the numbers stand (all post-tiler-fix, the only comparable set)
 
-- **The image confidence model's -0.1769.** Four confounds: fit on ~9 chondrules;
-  the base map is 91% saturated; `fit_error_unet` samples patches **uniformly**
-  with no positive weighting while `PatchSet` uses `pos_frac=0.5`; and val/test
-  has flipped sign eight times in this project. On the held-out val half it
-  reached 0.1948 pruned versus **0.4092 for the free margin baseline**, so it
-  lost to a zero-parameter signal on validation too, before any transfer
-  question.
-- **The classical `plus3_ws` +0.0058 watershed gain.** `watershed_split`
-  silently deletes small objects, so the gain may be an artifact of dropping
-  objects the metric then stops penalising.
-- **The hierarchy's -0.012.** `results/hier_then_cnn_s30000.json` carries no
-  regime string and predates the retrain. If its 0.30374 is post-fix, the honest
-  delta against 0.29409 is **+0.0097**, opposite in sign.
+| | test IoU |
+|---|---|
+| CNN `unet2d_s30000` | **0.29409** (Dice 0.455, prec 0.372, recall 0.584, AUPRC 0.427) |
+| + prune (margin baseline) | 0.3028 test, but **−0.0071 on val**: below the floor and sign-flipped, not a gain |
+| CNN + geometry augmentation | 0.24404 (−0.0501, replicated at two budgets) |
+| classical `plus3_ws` | 0.2185 (**defect-contaminated**, see KNOWN DEFECTS) |
+| classical `plus3` | 0.2127 |
+| classical `base18` | 0.2028 (reproduces the published 0.203 baseline) |
+| annotation ceiling | 0.9226, so 0.294 is ~32% of achievable |
 
-## Traps this session hit, in order of how much time they cost
+**Do not read the leaderboard's top row.** `unet2d_s15000` at 0.3089 sits above
+`unet2d_s30000` but is pre-tiler-fix, as is every other row there.
 
-1. **Untrained-net probes cannot validate an inference change.** A whole-slice
-   inference "fix" passed every check I ran on an untrained net, then collapsed
-   the trained model. Compare val IoU on the same saved weights instead.
-2. **Corrections propagate badly.** Retractions landed in the CHANGELOG and were
-   left standing in code docstrings, the README and the ROADMAP. When retracting
-   a number, grep the whole repo for it.
-3. **Diagnose before acting.** A 2 h cross-fit re-run was spent on a hypothesis
-   that a 90-second in-fold-vs-out-of-fold check refuted.
-4. **Two logs can share a name.** `logs/data_scaling_v2.log` and
-   `results/data_scaling_v2.log` were different jobs; checking only one produced
-   a wrong claim about what a killed job had written.
-5. **Four concurrent jobs pushed the Mac into 3.4 GB of swap** and took epochs
-   from 70 s to 250 s, against constitution §11's 2-worker default.
+## UNVERIFIED and potentially important: the chondrule count may be wrong
+
+Measured this session with the same-id 3D rule (`count_chondrules_3d`) plus the
+valid mask:
+
+```
+train 63    val 36    test 43    sum 142   (matches split.json n_chondrule_instances: 142)
+```
+
+But `src/pipeline_v2.py:81` sets `SE_REF_N = 19`, and **every noise-floor figure
+in this project scales from that 19**. If val really holds 36, the MDE tightens
+from 0.0142 to roughly 0.0103.
+
+Hypothesis for where 19 came from: it may be a plain BINARY connected-components
+count of the val zone, i.e. the exact undercount this repo documents (87 vs 142,
+a 39% shortfall) frozen into the constant. `split.json` records no per-zone
+counts, and `CHANGELOG.md:950` says the 0.0071 SE was bootstrapped over
+validation **slices**, not chondrules, so the scaling unit may also be wrong.
+
+**Two verifiers were launched to check this and were stopped for memory before
+reporting. Nothing has been changed on the strength of it.** Countervailing
+consideration: the floor uses `2·SE` where the convention is `2.8·SE`, and it
+ignores training-seed variance, both of which would WIDEN the floor. Settle both
+before touching `SE_REF_N`, because it propagates into every
+`below_noise_floor` flag the pipeline emits.
+
+## Respect the machine (violated twice this session)
+
+1. Four concurrent training jobs took epochs from 70 s to 250 s and pushed the
+   Mac into swap.
+2. Two `harness-verifier` agents each called `evaluate.load(".")`, which pulls
+   train, val AND test into memory, several GB apiece. Sky flagged it.
+
+`evaluate.load` takes `want_test=False`. Use it. One data-loading process at a
+time, and tell any agent that touches these volumes which zones it actually
+needs. Note that macOS reports swap as the cumulative swap-FILE size, which does
+not shrink; check `vm_stat` pageout RATE for real pressure, not the swap total.
 
 ## Next steps
 
-1. **Test pretraining as an instrument** (Sky's choice). A torchvision ResNet-18
-   or ResNet-34 encoder with the existing U-Net decoder is ~45 MB, nothing like
-   the SAM-scale downloads that motivated `run_families.EXCLUDED`. Hold the
-   split, budget and threshold discipline fixed so the gap is interpretable.
-   **Recount chondrules first**: the "~99 in train" figure is unverified (3D
-   connected components give 52 or 47; `split.json` implies ~76), and any
-   substitution rate depends on it.
-2. **Finish the data-scaling curve.** It stands at **1 of 12 runs** after three
-   attempts and is the direct test of Sky's "we need more data". ~10 h,
-   resumable.
-3. Run the two arms from decision 2 above.
-4. Fix the defects in the KNOWN DEFECTS block of CHANGELOG.md.
+1. Let the pretrained arm finish, then run `--arm=scratch`, then report both TEST
+   IoUs with full metric sets and the gap against the ~0.05 threshold above.
+2. Settle the `SE_REF_N` question above (verifiers, then fix or leave with a
+   recorded reason).
+3. Finish the data-scaling curve: still **1 of 12 runs** after three attempts,
+   and it is the direct test of "we need more data". ~10 h, resumable.
+4. The two arms Sky authorised on 2026-07-30 and that have never run: CNN with
+   cleaned channels, and CNN cascaded on the classical probability. Cascade
+   channel is ready (`results/probs/classical_xf_*.npy`, 5-fold, all 213 train
+   slices). The cleaned-channels arm needs `CNNRunner`'s aux path widened from 1
+   channel to N.
+5. Fix the defects in CHANGELOG.md's KNOWN DEFECTS block.
+
+## Traps that cost time this session
+
+- **Untrained-net probes cannot validate an inference change.** A whole-slice
+  inference "fix" passed every check on an untrained net, then collapsed the
+  trained model (val IoU 0.4487 to 0.2632).
+- **Corrections propagate badly.** Retractions landed in the CHANGELOG and were
+  left standing in code docstrings, the README and the ROADMAP. When retracting a
+  number, grep the whole repo for it.
+- **Diagnose before acting.** A 2 h cross-fit re-run was spent on a hypothesis a
+  90-second in-fold-vs-out-of-fold check refuted.
+- **Two logs can share a name.** `logs/data_scaling_v2.log` and
+  `results/data_scaling_v2.log` were different jobs.
+- **The commit gate keys review state by the SESSION's directory.** Reviews run
+  from a worktree session do not satisfy a commit made in the main checkout, and
+  no agent in that session can update the main key. Also, its `[review-skip]`
+  hatch is only read from `-m`/`--message`; with `-F file` the hatch is invisible.
+  Commit e37aa0e used the hatch with Sky's explicit approval, logged.
