@@ -14,8 +14,10 @@ Leakage rules enforced here [LEAKAGE][MUST]:
   * test is loaded only for the single final scoring call.
 """
 from __future__ import annotations
+import datetime
 import json
 import os
+import subprocess
 import time
 import traceback
 import numpy as np
@@ -59,6 +61,66 @@ def recall_operating_point(prob, mask, valid, min_recall=0.90):
             if best is None or m["precision"] > best[1]["precision"]:
                 best = (float(t), m)
     return best  # (thr, metrics) or None
+
+
+# Which tiers run through the tiled predictor (`CNNRunner.predict_proba`), and
+# which never touch it. An unrecognised tier must NOT be assumed to have tiled,
+# so it stamps "unknown" rather than defaulting to "post".
+_TIER_REGIME = {
+    "C_cnn": "post",            # tiles: CNNRunner.predict_proba
+    "E_cascade": "post",        # tiles: its refiner is a CNNRunner
+    "D_gnn": "n/a",             # paints superpixel probabilities directly
+    "A_threshold": "n/a",       # whole-slice thresholding, no net
+    "B_classical_ml": "n/a",    # per-pixel features, no net
+}
+
+
+def _scoring_stamp(tier):
+    """Provenance for one scored row: which code produced it, and when.
+
+    None of the rows that predate this carried any dating field, so their
+    inference regime had to be reconstructed from a backup snapshot and log
+    mtimes. Stamping at scoring time means that never has to be done again.
+    `tiler_regime` records whether the row went through the tiled predictor,
+    per `_TIER_REGIME`; the halo-crop fix is in, so a tier that does tile and is
+    scored now is "post".
+
+    The commit is resolved against THIS file's repo, not the process cwd. A run
+    launched from another directory would otherwise stamp a different repo's
+    commit, and a confidently wrong provenance is worse than none. Same reason
+    for the dirty-tree check: `rev-parse HEAD` names the last COMMIT, so a run
+    launched from a modified tree would be stamped with code that is not the
+    code that ran. A hash that silently omits uncommitted changes is worse than
+    no hash, so a dirty tree gets a "-dirty" suffix. If `rev-parse` succeeded but
+    `status` failed, the hash is known and the tree state is not, so the stamp
+    keeps the hash with an "-unknown" suffix; the commit is dropped entirely only
+    when `rev-parse` itself failed.
+    """
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        commit = subprocess.run(["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+                                capture_output=True, text=True,
+                                timeout=5).stdout.strip() or None
+    except Exception:
+        commit = None
+    try:
+        st = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
+                            capture_output=True, text=True, timeout=5)
+        if st.returncode != 0:
+            # `subprocess.run` does not raise on a non-zero exit, so without this
+            # a failed status call leaves `dirty` empty and the row gets a BARE
+            # hash, which reads as "clean". That is the exact outcome this check
+            # exists to prevent, so force the unknown path.
+            raise RuntimeError(f"git status exited {st.returncode}")
+        if commit and st.stdout.strip():
+            commit = f"{commit}-dirty"
+    except Exception:
+        if commit:
+            commit = f"{commit}-unknown"
+    return {"scored_commit": commit,
+            "scored_utc": datetime.datetime.now(datetime.timezone.utc)
+                                  .isoformat(timespec="seconds"),
+            "tiler_regime": _TIER_REGIME.get(tier, "unknown")}
 
 
 def append_leaderboard(entry, path=LEADERBOARD):
@@ -130,6 +192,7 @@ def run_and_score(runner, data=None, root=".", extra=None, save_prob=None,
     row["sec"] = round(time.time() - t0, 1)
     if extra:
         row.update(extra)
+    row.update(_scoring_stamp(row.get("tier")))   # authoritative: after `extra`
     if leaderboard:
         append_leaderboard(row)
     return row

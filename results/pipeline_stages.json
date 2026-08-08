@@ -1,0 +1,40 @@
+{
+  "regime": "every stage fitted on VALIDATION probabilities and applied to TEST once; base is the POST-tiler-fix unet2d_s30000 map. Supersedes results/final_pipeline.json, whose stages were measured against the pre-fix base (0.31676).",
+  "model": "unet2d_s30000",
+  "base_threshold": 0.002,
+  "z_refine": {
+    "mode": "mean",
+    "k": 7,
+    "thr": 0.3,
+    "val_iou": 0.4581808773629352
+  },
+  "classical_arm": {
+    "threshold": 0.85,
+    "val_iou": 0.3996000155204382,
+    "test_iou": 0.21268197175320824,
+    "detail": "cross-fitted classical map (results/probs/classical_xf_{val,test}.npy) thresholded at 0.85, selected on val. This is an ALTERNATIVE stage-2/3 arm, not composed with the CNN: the classical-channel cascade has never been run."
+  },
+  "stages": [
+    {
+      "stage": "0. base U-Net",
+      "val_iou": 0.44512049072944504,
+      "test_iou": 0.2940942599826064,
+      "detail": "probability >= 0.002, threshold frozen on val"
+    },
+    {
+      "stage": "1. + z-refine",
+      "val_iou": 0.4581808773629352,
+      "test_iou": 0.29214810810679587,
+      "detail": "z_smooth mode=mean k=7 thr=0.3, all fitted on val"
+    },
+    {
+      "stage": "2. over-predict + prune",
+      "val_iou": 0.43807083994230245,
+      "test_iou": 0.30278824149718325,
+      "detail": "opened to recall 0.9576 at thr=9.78e-07, pruned below margin 0.5000 (fitted on val)",
+      "recall_target_unreachable": false,
+      "unpruned_val_iou": 0.07107118924956299,
+      "prune_val_gain": 0.36699965069273943
+    }
+  ]
+}

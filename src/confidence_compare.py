@@ -24,6 +24,13 @@ training data does not change that — augmentation adds pixel configurations, n
 independent chondrules. This module therefore prints the MDE next to every
 delta and flags anything under it.
 
+[CORRECTED 2026-08-04] "19 validation chondrules" is the wrong label. 19 is the
+val zone's BINARY connected-components count; the pipeline's own same-id rule
+gives 36 over identical voxels (`src/recount_chondrules.py`). `SE_REF_N` was left
+at 19 deliberately, because the `SE_REF_IOU = 0.0071` it pairs with was
+bootstrapped over 60 validation SLICES, so neither chondrule count was ever the
+resampling unit. The 0.0071 and the 0.0142 floor are unchanged.
+
 Run:  python -m src.confidence_compare [--recall=0.99] name1 name2 ...
 """
 from __future__ import annotations
@@ -36,7 +43,10 @@ import numpy as np
 from . import combine, confidence_bakeoff as cb, evaluate, metrics
 
 OUT = "results/confidence_compare.json"
-MDE = 0.0142            # 19 val chondrules; see pipeline_v2.power_report
+# [CORRECTED 2026-08-04] The 19 this floor is anchored on is the val zone's
+# BINARY connected-components count, not a chondrule count. The same-id rule
+# gives 36 there, and neither was the resampling unit, so 0.0142 is unchanged.
+MDE = 0.0142            # SE_REF_N = 19; see pipeline_v2.power_report
 
 
 def _probs(name):
@@ -85,10 +95,11 @@ def run_one(name, d, target_recall=0.99, seed=0):
     win = max(board, key=lambda r: r["pruned_val_iou"])
 
     # [MUST] `run_bakeoff` registers estimators as fitted[f"{task}_{name}"]
-    # (confidence_bakeoff.py:283), matching pipeline_v2.py:512. Looking up the
-    # bare name returns None, which sends evaluate_on_test down its free-baseline
-    # branch and raises KeyError — so the arm would only ever complete when a
-    # free baseline won, i.e. exactly when the learned error model LOST.
+    # (confidence_bakeoff.py:283), matching the `fitted.get` on the same key in
+    # `pipeline_v2.confidence_sweep`. Looking up the bare name returns None,
+    # which sends evaluate_on_test down its free-baseline branch and raises
+    # KeyError — so the arm would only ever complete when a free baseline won,
+    # i.e. exactly when the learned error model LOST.
     est = fitted.get(f"{win.get('task')}_{win['name']}")
     test = cb.evaluate_on_test(win["name"], est, win.get("task"),
                                pt, Rt, Mt, Vt, thr_rec, win["cutoff"],
@@ -222,9 +233,15 @@ def main(argv=None):
         else:
             verdict = "above the noise floor"
         print(f"\n{b['model']} - {a['model']} = {dv:+.4f} IoU  ({verdict})")
-        print(f"[REGIME] MDE {MDE:.4f} is derived from {19} VALIDATION chondrules "
-              "and is applied here to a TEST delta; the true floor is probably "
-              "higher (it uses 2*SE, not the conventional 2.8*SE).")
+        # [CORRECTED 2026-08-04] This print used to call the 19 "VALIDATION
+        # chondrules". It is `pipeline_v2.SE_REF_N`, the val zone's binary
+        # connected-components count; the same-id rule gives 36 there. Neither
+        # count was the resampling unit, so the floor itself is unchanged.
+        print(f"[REGIME] MDE {MDE:.4f} is anchored on a VALIDATION reference "
+              f"size of {19} (a binary connected-components count, not a "
+              "chondrule count) and is applied here to a TEST delta; the true "
+              "floor is probably higher (it uses 2*SE, not the conventional "
+              "2.8*SE).")
     return rows
 
 

@@ -51,19 +51,86 @@ project. Honest numbers only; evaluation regime stated with every metric.
   invisible. Extend the grid and print more digits so the distinction is
   observable rather than requiring a bespoke probe.
 
-  **Every leaderboard IoU in this repo was produced under tiled inference, and
-  the leaderboard now mixes a post-halo-crop row with ~40 pre-fix rows with no
-  per-row provenance.** Full detail under 2026-07-29 below.
+  **Every CNN-family leaderboard IoU in this repo was produced under tiled
+  inference.** [UPDATED 2026-08-04] The counts and the provenance gap are now
+  settled. Of 44 rows: **4 are post-halo-crop** (`unet2d_s30000` 0.29409,
+  `unet2d_s30000_auggeom` 0.24404, `resunet18_pretrained_s30000` 0.30269,
+  `resunet18_scratch_s30000` 0.33569), **33 are pre-fix** (including the
+  E_cascade row, whose `predict_proba` delegates straight to `CNNRunner`), and
+  **7 never touched the tiler** (the D_gnn rows paint superpixel probabilities
+  directly). Every row now carries a
+  `tiler_regime` field of "pre", "post" or "n/a", and `run_and_score` stamps
+  each new row with the git commit and a UTC timestamp, so this never has to be
+  reconstructed again. Full detail under 2026-07-29 below, backfill evidence
+  under 2026-08-04.
 
 - **`+10% from z-context` is UNBACKED.** `results/probs/unet25d_k5.npy` is
   actually the 30,000-step run's output (bare-name collision, fixed in code but
   after these files were written). Re-scoring it gives **0.2154**, not the
   leaderboard's 0.2547 — the surviving artifact points the OPPOSITE way. Treat
   every "2.5D beats 2D at equal budget" statement as unverified.
-- **The 3k budget anchor has no artifact.** `probs/unet2d.npy` is byte-identical
-  to `probs/unet2d_s30000.npy`. The 0.2314 value is independently reproduced by
-  `rt_dice_ctrl` (0.23142 @ thr 0.25), but the named file is wrong, and
-  `pick_winner` globs both names so one model enters the ranking twice.
+- **The 3k budget anchor's named file is wrong.** [CORRECTED 2026-08-04, twice
+  over.] The original wording said `probs/unet2d.npy` is byte-identical to
+  `probs/unet2d_s30000.npy`. That was true when written and is FALSE now: the
+  post-fix retrain rewrote `probs/unet2d_s30000.npy` on 2026-07-29 19:54, so the
+  two differ today (sha256 b58d50d9 vs e5fd4ed9). The surviving fact is sharper.
+  `probs/unet2d.npy` is byte-identical to
+  **`results/prefix_tiler_backup/probs/unet2d_s30000.npy`**, confirmed by hash,
+  so the file holds the 30,000-step run's map written under the bare family
+  name. `probs/unet25d_k5.npy` has the same defect and re-scores to 0.2154
+  against its row's 0.2547. The 0.2314 anchor therefore has no correctly named
+  artifact, but `probs/rt_dice_ctrl.npy` is a byte-level stand-in for the same
+  configuration under the same pre-fix tiler.
+
+  **"Independently reproduced" overclaimed.** `rt_dice_ctrl` (0.23142 @ thr
+  0.25) matches `unet2d` on every metric including AUPRC to full precision.
+  That is not independent reproduction: the two are the SAME configuration down
+  to `seed=0`, so this is a determinism check, not a seed replicate, and it
+  supplies no variance estimate. Two separate executions did occur (`sec` 871.3
+  vs 947.1), so the rows are honest.
+
+  `pick_winner` globbing both names, so one model enters the ranking twice,
+  SURVIVES. `best_model_by_val` (`src/run_overnight.py:22-43`) has the same
+  defect and is still called live at `:185, :218, :247`, so a future run can
+  still select the mislabeled entry. The "best of 40 architectures" framing
+  also over-counts by one, because that duplicated configuration is two rows.
+
+- **[NEW 2026-08-04] `run_and_score` has no invariant tying a row to its saved
+  map.** `save_prob` is a caller-supplied string that is never checked against
+  `runner.name` (`src/evaluate.py`), and `append_leaderboard` dedupes on `model`
+  while recording nothing about which file the row's map went to. That absence
+  is the structural cause of the misattribution above, and it is still
+  unguarded. The provenance stamp added today records the commit and the time
+  but not the map path.
+- **[NEW 2026-08-07] 🔴 `unet2d_s30000`'s recorded AUPRC of 0.42703 cannot be
+  reproduced from any map on disk, under any definition tried.** Found while
+  building the fp_penalty figures. Measured on the live post-fix map
+  `results/probs/unet2d_s30000.npy` with the project's own `metrics.auprc`:
+
+  | quantity | value |
+  |---|---|
+  | leaderboard row, `auprc` | **0.42703** |
+  | `metrics.auprc` on the live map (valid-masked, pooled) | **0.30937** |
+  | same, no valid mask | 0.31676 |
+  | per-slice mean (valid-masked, n=80) | 0.31705 |
+  | per-slice median | 0.30083 |
+  | pre-fix backup map, valid-masked pooled | 0.31580 |
+
+  **The row's other metrics DO match that map**: IoU at the frozen threshold
+  0.002 reproduces 0.29409 exactly, and tp/fp/fn agree to within 6 pixels out of
+  5.8M. So this is not a wrong-map misattribution like the `unet25d_k5` case; it
+  is one field of an otherwise-correct row disagreeing with its own map by
+  +0.118. Subsampling is excluded: strides of 2, 4 and 8 all give 0.3089.
+
+  **AUPRC 0.427 is quoted as part of the headline metric set in `HANDOFF.md`,
+  `CHANGELOG.md` and `README.md`.** Nothing has been changed on the strength of
+  this, and the number is NOT retracted here, because the measurement says only
+  that the row and the artifact disagree, not which one is wrong. Settle it
+  before quoting 0.427 again. Note also that the no-valid-mask value 0.31676 is
+  digit-for-digit the `baseline_test` in `results/final_pipeline.json`, which is
+  an IoU, not an AUPRC; that is probably coincidence and is worth ten minutes to
+  confirm it is.
+
 - **`results/probs/` has no file for `unet2d_s15000`, `unet25d_k5_s15000`,
   `unet25d_k5_s30000`** — the 15k point (0.3089) quoted in the docs cannot be
   independently checked.
@@ -89,20 +156,615 @@ project. Honest numbers only; evaluation regime stated with every metric.
   already-swept models are gone and would need retraining.)*
 - **`results/data_scaling.json` is confounded** — contiguous subsets and one
   seed per point; it is non-monotonic and worst at 100% data. Do not quote it.
-  **It has NO replacement yet:** `src/data_scaling.py` is written but has never
-  completed a full 12-run sweep. A third attempt reached **1 of 12 runs** then stopped when the session ended;
-  `results/data_scaling_v2.json` holds that single run (frac 0.25, seed 0,
-  test IoU 0.2823, `n_seeds: 1`, `test_iou_sd: NaN`) — it is deliberately NOT
-  committed, because a single-seed partial under that filename is exactly the
-  misquoting hazard the file exists to prevent. The
-  question "does more annotated data help?" is currently unanswered.
-- **`tests/` is empty.** ~5,000 new lines ship with only synthetic `__main__`
-  smoke tests, none run automatically.
+  **[UPDATED 2026-08-04] Its replacement is partial, not absent.**
+  `src/data_scaling.py` has still never completed a full 12-run sweep, but the
+  curve now stands at **3 of 12 runs**. Fraction 0.25 is complete at 3 seeds
+  (test IoU 0.2823 / 0.2664 / 0.2696, `n_seeds: 3`, `test_iou_sd` about
+  0.00841), and `results/data_scaling_v2.json` IS committed in this change.
+  Fractions 0.5, 0.75 and 1.0 stand at 0 of 3 each, so 9 runs remain, roughly
+  5 hours. The earlier wording here said 1 of 12, `n_seeds: 1`,
+  `test_iou_sd: NaN`, and deliberately uncommitted; all three are now wrong. One
+  completed fraction gives no slope, so the question "does more annotated data
+  help?" is still unanswered.
+- **`tests/` is no longer empty, and still covers almost nothing.** [UPDATED
+  2026-08-04] The earlier wording here said `tests/` is empty; that is now wrong.
+  Two files ship: `tests/test_aux_channels.py` (the N-channel aux input path,
+  including bit-identical equivalence for a single-channel aux) and
+  `tests/test_multi_meteorite.py` (multi-meteorite ingestion: padding to a common
+  in-plane size, padding marked invalid, per-slice provenance). Neither covers
+  the noise floor or any model's accuracy. Both run on synthetic data from
+  `__main__`, so the ~5,000 new lines still have nothing that runs
+  automatically.
 - **Latent bug:** `run_families.py` / `cascade.py` do `bool(rec["aug"])`, so an
   `aug="geom"` recipe would silently train with intensity jitter. Not triggered
   today (winning recipe has `aug: false`).
 
 
+
+### 2026-08-07: The complete model end to end, five stage-3 arms, and two more non-results rendered as results
+
+*Spec (condensed). **Problem:** three days of work (2026-08-05 to 2026-08-07) sat
+uncommitted and undocumented, and the headline number of its main experiment was
+wrong. **Approach:** give the `full` arm the seeds it was missing, fix the
+printout that manufactured the wrong number, and record the lot. **Acceptance:**
+`full` at n=3 with a real seed SD, verdicts formed within a budget only, no
+verdict claimed at n=1. All met. Full note in
+`specs/2026-08-07-full-arm-seeds/spec.md`. The 08-05 and 08-06 items below are
+documented retrospectively from their artifacts, not from a session record.*
+
+**[RETRACTED] `full` is not val 0.5203 +/- 0.0158 / test 0.2574 +/- 0.0055.**
+That row, printed in `logs/cascade_arms.log` under a header reading "3 seeds
+each, 7,200 steps", is the mean of a 7,200-step run and a 30,000-step run pooled
+across two incomparable budgets, n=2, with the between-budget spread reported as
+a seed SD. Its companion verdict `full +0.1179, 2-sigma bar 0.0448, RESOLVED` is
+retracted with it. Do not quote either. `save()` had already been fixed to group
+by (arm, budget) and `results/cascade_arms.json` was correct; the printed summary
+was never regenerated, which is how a corrected file and a wrong log came to
+coexist.
+
+**This one did NOT propagate**, which is worth recording because the opposite has
+happened repeatedly here. Grepped repo-wide for 0.5203, 0.2574 and 0.1179: they
+appear nowhere outside `logs/cascade_arms.log` and this retraction. The
+2026-08-06 handoff independently reported the arm as `full (n=1) 0.5092`, the
+honest number, so the wrong value never reached a document anyone reads.
+
+**The corrected `full` arm, three seeds at 7,200 steps** (val 0.5092 / 0.4778 /
+0.5089, test 0.2535 / 0.2399 / 0.2493):
+
+| arm, 7,200 steps, n=3 | val IoU | test IoU |
+|---|---|---|
+| control (raw only) | 0.4024 +/- 0.0159 | 0.2493 +/- 0.0289 |
+| cleaned (+ denoise/CLAHE/top-hat) | 0.4560 +/- 0.0098 | 0.2534 +/- 0.0099 |
+| cascade (+ cross-fit classical probability) | 0.4757 +/- 0.0118 | 0.2467 +/- 0.0040 |
+| **full (both)** | **0.4986 +/- 0.0181** | **0.2476 +/- 0.0070** |
+| fp_penalty | 0.3874 +/- 0.0169 | 0.2033 +/- 0.0178 |
+
+Against the control, same 2-sigma rule on both axes: cleaned +0.0536 (bar 0.0374)
+RESOLVED on val and +0.0041 (bar 0.0612) inside the noise on test; cascade
++0.0733 (0.0397) RESOLVED and -0.0026 (0.0584) inside the noise; **full +0.0962
+(0.0482) RESOLVED and -0.0017 (0.0595) inside the noise**; fp_penalty -0.0150
+(0.0464) and -0.0460 (0.0679), inside the noise on both.
+
+The val conclusion SURVIVES the correction at twice its bar, and the ordering
+cleaned < cascade < full is intact, so the two classical products do stack rather
+than one carrying the effect. No arm is separable from the control on test, and
+`full`'s test gap changed SIGN when the missing seeds arrived, +0.0042 at n=1 to
+-0.0017 at n=3. The 30,000-step `full` run (val 0.5315, test 0.2613) stays n=1
+and is NOT verified as hyperparameter-matched to `unet2d_s30000` (test 0.29409,
+recipe `phase1:p1_ctrl_b32`), so those two must not be differenced.
+
+**The mentor's proposal was tested and did not help.** `fp_penalty` is Tversky
+with alpha 0.7 on false positives and beta 0.3 on false negatives, the exact
+mirror of the 0.3/0.7 recall direction already measured to hurt. Tversky at
+alpha = beta = 0.5 IS Dice, so `control` is the matched symmetric baseline and no
+separate control was needed. It is the worst of the five arms on both axes and
+the only one whose val gap points down, but neither gap clears its bar, so the
+honest verdict is **no benefit detected with the sign pointing the wrong way**,
+not "proven harmful". Scope: one alpha/beta setting, 7,200 steps not 30,000, and
+raw-only inputs, because `build_lookup` gives `fp_penalty` no aux channels. It
+has never been composed with the `full` arm.
+
+**Four more val/test pairs, and they support the val-versus-test bar rather than
+the sign-flip tally.** `results/val_vs_test.json` puts the smallest val gap that
+predicts anything at 0.137 to 0.172 IoU. All four arms here have val gaps below
+that bar and all four produced test gaps inside the noise, including the one
+comfortably resolved on validation. The 2026-08-04 entry noted only TWO effects
+had both numbers recorded; these are four more, seed-replicated, landing the same
+way.
+
+**[2026-08-06] Two printout defects fixed in `report()`, both of the same
+class: a number that is not a result being rendered as one.**
+1. The control was selected by arm NAME alone, so every row was differenced
+   against whichever control came first regardless of budget. The 30,000-step
+   `full` row printed as "+0.1291 against the control" where the control was the
+   7,200-step one, the cross-budget comparison this module's own `regime` string
+   forbids. Gaps are now formed within a budget only, and a budget with no
+   control of its own says so instead of borrowing one.
+2. A single-seed row has no SD, so its bar was `nan`; `abs(gap) > nan` is False,
+   so the verdict fell through to **"inside the noise"** — a claim about noise
+   where n=1 supports no verdict. It now prints "no verdict (n=1)". Verified by
+   exercising the path directly: same inputs, old code "inside the noise", new
+   code "no verdict (n=1)".
+
+`--report` reprints from `results/cascade_arms.json` without the multi-GB
+`evaluate.load`, and rebuilding the summary from `runs` re-applies the current
+(arm, budget) grouping, so a file written under the old pooling is corrected by
+being read. Confirmed not to mutate the JSON.
+
+**[2026-08-05] The complete model measured end to end on the post-fix base**
+(`src/pipeline_viz.py`, `results/pipeline_stages.json`). Every stage fitted on
+VALIDATION and applied to TEST once. This supersedes `results/final_pipeline.json`,
+whose stages were all measured against the pre-tiler-fix base (0.31676) that no
+longer exists.
+
+| stage | val IoU | test IoU |
+|---|---|---|
+| 0. base U-Net `unet2d_s30000`, thr 0.002 | 0.44512 | 0.29409 |
+| 1. + z-refine (mean, k=7, thr 0.3) | 0.45818 | 0.29215 |
+| 2. + over-predict to recall 0.9576, then prune | 0.43807 | 0.30279 |
+
+**Constitution section 9 remains unproven on the model the project ships.**
+Over-predict-then-prune LOSES 0.00705 on validation, which is the axis that
+decides, and gains 0.0087 on test. Neither clears the noise floor, and they
+disagree in sign. The over-predict step alone costs almost everything: opened to
+recall 0.9576 the map scores val 0.07107 / test 0.06026, so the prune is
+recovering 0.367 val IoU just to end up below where it started.
+
+**[2026-08-06] The confidence stack: combining the three signals does not beat
+the best single one** (`src/confidence_stack.py`, `results/confidence_stack.json`).
+Earlier measurements established only that no SINGLE signal beats the free margin
+baseline; whether the three COMBINED help had never been tested. Stacked by a
+logistic model cross-fit inside val on contiguous buffered folds, one prune:
+
+| arm | val IoU | test IoU |
+|---|---|---|
+| regressor alone | **0.45874** | 0.29316 |
+| stacked (all three) | 0.44731 | 0.28661 |
+| margin (free baseline) | 0.43807 | **0.30279** |
+| error U-Net alone | 0.10561 | 0.06969 |
+| z-agreement alone | 0.08018 | 0.07134 |
+
+The stack loses to its own best component on val by 0.01143, so the answer is no.
+The val and test orderings are exactly reversed: val selects the regressor, which
+then scores 0.0096 BELOW the free margin baseline on test. Stacker coefficients
+put almost all weight on the regressor (7.99 against 1.10 and 0.75), which is
+consistent with eight of its eleven features being functions of `prob` itself.
+
+**Figures** (`results/figures/`): `full_pipeline.png` and `pipeline_stages.png`
+on the raw-only base, `full_pipeline_full_arm.png`, `pipeline_stages_full_arm.png`
+and `confidence_signals_full_arm.png` on the composed arm, plus `best_model.png`
+and `poc_overlay_spread.png`. KNOWN DEFECT: `full_pipeline.png`'s caption reads
+"stage 3's classical-channel cascade arm has never been run, so the CNN sees raw
+only". True when written, false now, and not regenerated.
+
+**TRAP: `pytest tests/` collects nothing and reports success.** Both test modules
+are script-style with a `__main__` entry, so pytest returns "no tests ran" with
+exit 0, which reads as a pass. Run them as modules: `python -m tests.test_aux_channels`
+and `python -m tests.test_multi_meteorite`. Both pass as of this commit. This is
+also why the harness test gate has no `last_test` field to write.
+
+### 2026-08-04: The pretraining probe, and the noise floor moves the wrong way
+
+*Spec (condensed). **Problem:** the pretrained arm of the data-starvation probe
+was mid-run, the validation chondrule count was flagged as possibly wrong, and
+the docs still let superseded rows be quoted alone. **Approach:** settle the
+count question by adversarial verification before touching any constant, run the
+control arm, and mark provenance where a number can be extracted without its
+caveat. **Acceptance:** no constant changed on a single unverified count, both
+probe arms scored on TEST with the threshold frozen on val, and every correction
+recorded rather than left in a subagent's report.*
+
+**Pretrained arm (ResNet-18 ImageNet encoder + U-Net decoder, 30,000 steps).**
+Scored once on TEST with the threshold frozen on val.
+
+| metric | value |
+|---|---|
+| test IoU | 0.30269 |
+| Dice | 0.4647 |
+| precision | 0.3394 |
+| recall | 0.7368 |
+| AUPRC | 0.4671 |
+| ECE | 0.0736 |
+| threshold (val-frozen) | 0.018 |
+| per-slice median IoU | 0.2848 |
+| val IoU | 0.5282 |
+| wall clock | 8150 s |
+
+This is +0.0086 against plain `unet2d_s30000` (0.29409), and that comparison is
+NOT interpretable: it changes architecture and initialisation at once. The
+scratch control arm is what makes the gap mean anything, and it was still running
+when this entry was written. The error profile did shift, with recall up from
+0.584 to 0.737 and precision down from 0.372 to 0.339, and AUPRC up 0.040.
+
+**[CORRECTION] Raising SE_REF_N would LOOSEN every noise floor, not tighten it.**
+The 2026-08-02 handoff proposed that validation holds 36 chondrules rather than
+19, and that the minimum detectable effect would therefore tighten from 0.0142 to
+roughly 0.0103. Two independent verifications refute the second half.
+
+`SE_REF_IOU` and `SE_REF_N` are a MATCHED ANCHOR PAIR from one bootstrap on one
+zone, not an independent SE and an independent count. `MDE(n) = 2 * SE_REF_IOU *
+sqrt(SE_REF_N / n)`. If that zone really holds 36 chondrules, the measured SE at
+n=36 IS 0.0071, the floor at that zone stays 0.0142, and every projection to
+larger n loosens by sqrt(36/19) = 1.376. At n=150 the projected MDE goes from
+0.0051 to 0.0070. A recount adds no data, so it cannot buy power. The 0.0103
+figure is what `power_report(36)` prints today with the anchor left at 19, which
+is the inconsistent state. **HANDOFF.md's 0.0103 is WITHDRAWN.**
+
+Corroborating detail found while checking this: the bootstrap CI of
+[-0.013, +0.015] recorded in this file's 2026-07-23 "Full model sweep, budget
+curve, confidence pipeline" entry, under "Model selection is unreliable here",
+is centred on the +0.000976 gap between the top two models in
+`results/final_pipeline.json`, with half-width 0.0140. At
+SE = 0.0071 the bounds reproduce exactly; at 0.0075 neither bound reproduces.
+[HONESTY] That is strong circumstantial evidence that 0.0071 and the CI are the
+same measurement, not proof. No bootstrap code exists anywhere in this repo or
+its history, so the derivation cannot be re-run, and the claim that the
+resampling unit was SLICES rests entirely on prose at three sites.
+
+**[RECORD] Test was scored five more times today.** Two probe arms and three
+data-scaling seeds. The frozen split's test slab is not a clean holdout and has
+not been one for a long time: 44 leaderboard rows, plus thresholds, plus pipeline
+variants, plus retrains have each queried it. README concedes roughly 0.02 to
+0.03 of optimism from the 40-model sweep alone, which understates the total.
+Recording the count here because the constitution's "touch test once" rule is
+being deviated from routinely and the deviations were not previously written
+down.
+
+**[SETTLED] The recount ran, and `SE_REF_N = 19` is a BINARY-CC count.**
+`src/recount_chondrules.py` counts both ways over identical voxels, taking zone
+membership from `split.json`'s `abs_slices` and the valid mask from the same
+cache training uses. Output in `results/chondrule_recount.json`.
+
+| zone | slices | same-id 3D | binary CC | shortfall |
+|---|---|---|---|---|
+| train | 213 | 63 | 49 | 22.2% |
+| val | 60 | **36** | **19** | 47.2% |
+| test | 80 | 43 | 24 | 44.2% |
+| total | | **142** | 92 | |
+
+Validation holds exactly 19 by binary connected components and 36 by the same-id
+rule. The constant therefore froze the precise undercount that
+`pipeline_v2.count_chondrules_3d`'s own docstring warns against.
+
+**[RETRACTED, same day] An earlier draft of this paragraph read "The predicted
+shortfall for that hypothesis was 47.2% and the measured shortfall is 47.2%."
+That is a TAUTOLOGY presented as a confirming prediction, and it is withdrawn.**
+Both figures are `1 - 19/36` computed from the same two measured integers, so
+they cannot disagree. The only genuinely prior number on record was the 39%
+whole-volume shortfall in `pipeline_v2.count_chondrules_3d`'s docstring (87
+against 142), which does NOT match 47.2%.
+This is the same self-confirming-check defect flagged in `cascade.py` earlier the
+same day, reproduced in prose here.
+
+Of the three decompositions on record: the 2026-08-02 handoff's **63/36/43 is
+CONFIRMED** as the same-id decomposition, and the same-id total of 142 matches
+`split.json`'s `n_chondrule_instances`. The 99/19/24 in this file's 2026-07-29
+"Prepare for a second meteorite" entry, under "Free statistical power from slab
+placement", is NOT reproduced: its 19 and 24 are the binary-CC val and test
+counts, but 99 matches neither rule for train, which measures 63 same-id and 49
+binary-CC. 81/32/29 belongs to the different v2 split and is not comparable.
+
+[HONESTY] The COUNTS above were measured directly and stand. The claim about
+where `SE_REF_N` came from does not stand as firmly: the numeric match holds on
+two zones of three and the third contradicts it, since 99 matches neither 63 nor
+49. No per-zone binary-CC number was ever recorded in this repo before today, so
+this is strong circumstantial evidence that the constant was taken from a
+binary-CC count, not proof of its provenance.
+
+**The constant was still NOT changed, and re-pointing it to 36 is still wrong.**
+Confirming that 19 is a binary-CC artifact does not make 36 the right anchor.
+`SE_REF_IOU = 0.0071` was bootstrapped over 60 validation SLICES, so neither 19
+nor 36 was ever the resampling unit. Substituting 36 would leave the unit
+mismatch untouched while loosening every projection by sqrt(36/19) = 1.376. The
+defect is that the anchor is expressed in chondrules at all. Fixing it properly
+means re-expressing the anchor in the unit that was actually resampled, which
+rewrites every projection row, and that decision is still open.
+
+**The floor's blast radius is six files, not three.** Previously believed to be
+`pipeline_v2.py` plus two hardcodes. Also affected: the `abs(dv) < 0.0142` and
+`abs(dm) < 0.0142` comparisons in `src/run_error_cnn.py`'s reporting block (an
+executable gate), `src/confidence_compare.py`'s `[REGIME]` MDE print (hardcodes
+the count 19) and its `json.dump` of `mde_iou` into
+`results/confidence_compare.json` (persists the value), and the `axhspan` band
+in `src/make_figures.py`'s `fig_data_scaling` (the +/-0.0071 band rendered into
+`results/figures/data_scaling.png`). Two floors already coexist before any edit:
+`run_all` takes n from the split metadata and computes 0.0109 on the v2 split,
+while three modules print and store 0.0142.
+
+**Unresolved and larger than the count question.** The code uses MDE = 2.0 * SE
+while project prose cites 2.8 * SE at three sites with no derivation anywhere.
+That is 1.4x on every floor. Separately, the SE was bootstrapped over slices
+whose adjacent-slice label IoU is about 0.83 and whose prediction agreement is
+96.0%, so an i.i.d. slice bootstrap understates the SE. Both point the same way:
+the true floor is probably wider than 0.0142, which makes more of this project's
+measured method effects unresolvable, not fewer.
+
+**Fixed: the probe destroyed its own first result.** `src/pretrained_probe.py`
+built its output rows from empty and rewrote `results/pretrained_probe.json`
+after every arm, so running the two arms as separate processes (the documented
+workflow, and what the handoff instructed) had the second silently delete the
+first. Added `_prior_rows`, which keeps the other arm's row and still replaces a
+re-run of the same arm. The pretrained row was backed up before the control arm
+launched.
+
+**Docs: per-row provenance markers.** ROADMAP.md's results table and budget curve
+carried a block-level supersession warning but no per-row marker, so any single
+row quoted away from the warning read as current. Every superseded row now
+carries [PRE-FIX] in its own cell. Rows that never touched the CNN tiler
+(classical, GNN, intensity threshold) are marked as such instead.
+
+**The control arm, and the probe's verdict: NULL.** The scratch arm, identical
+in every respect except that its ResNet-18 encoder starts from random weights,
+scores **test IoU 0.33569** against the pretrained arm's 0.30269.
+
+| metric | pretrained | scratch | gap |
+|---|---|---|---|
+| test IoU | 0.30269 | 0.33569 | -0.03300 |
+| Dice | 0.4647 | 0.5026 | -0.0379 |
+| precision | 0.3394 | 0.4076 | -0.0682 |
+| recall | 0.7368 | 0.6554 | +0.0813 |
+| AUPRC | 0.4671 | 0.4430 | +0.0240 |
+| ECE | 0.0736 | 0.0633 | +0.0103 |
+| val IoU | 0.5282 | 0.4957 | +0.0325 |
+| val-frozen threshold | 0.018 | 0.002 | |
+
+Judged against the threshold registered BEFORE the numbers arrived: a test gap
+under about 0.05 is ambiguous at n=1 seed. **|-0.033| is inside that band, so
+this is not evidence either way, and it is not being reinterpreted now that it
+has a direction.** What can be said is that the ImageNet encoder did not deliver
+a large win, and the sign is opposite to "pretraining substitutes for data".
+
+**Ninth val/test sign flip.** Pretrained won validation by +0.0325 and lost test
+by -0.0330. The pre-registration said to judge on test precisely because of this
+history, and the history repeated.
+
+**[UNVERIFIED] The scratch arm's threshold sits on the grid floor.** Its
+val-frozen threshold is 0.002, which the KNOWN ISSUES block above records as the
+grid's lowest value, and the log prints `thr=0.00`. The two arms were therefore
+scored at thresholds an order of magnitude apart, one of them pinned at the grid
+boundary, so the comparison may not sit at either model's real operating point.
+The verifier launched to settle this died on a session limit and the question is
+OPEN. Do not treat the -0.033 as clean until it is answered.
+
+**Second reading, the architecture one.** Scratch ResNet18-UNet (0.33569) beats
+plain `unet2d_s30000` (0.29409) by +0.0416. Also n=1 seed, also inside the
+ambiguity band, and it is the comparison the probe's own docstring says to make.
+**[CORRECTED 2026-08-04] It does not isolate architecture.** `resunet18_*` is
+BatchNorm throughout (a torchvision ResNet-18 encoder plus a decoder built from
+`nn.BatchNorm2d`) while `unet2d_s30000` uses GroupNorm (`models_cnn._norm`), so
+this comparison crosses a normalisation change as well. The two arms of the
+probe still differ only in encoder initialisation; it is the comparison against
+`unet2d_s30000` that is confounded. One consequence: the two `resunet18_*` rows
+carry `tiler_regime: post` for a net that does not use GroupNorm, so the
+tile-grid dependence documented on the GroupNorm nets does not transfer to them.
+
+**Validation predicts test well, and is still useless here. Both are true.**
+Sky, 2026-08-04: *"things that score well on validation are overfitting"*. Tested
+against the 12 models that carry a recorded `best_full_val_iou` (10 from
+`final_pipeline.json`'s ranking, 2 from the probe), correlated with their
+leaderboard test IoU. The result went AGAINST the expectation:
+
+| statistic | all 12 | dropping `unet2d` |
+|---|---|---|
+| Pearson r | +0.794 | +0.861 |
+| Spearman rho | +0.862 | |
+| slope | +0.825 | +0.898 |
+| residual SD | 0.02565 | 0.02224 |
+
+(`unet2d` is dropped in the second column because its recorded val IoU is
+identical to `unet2d_s30000`'s, which is the probs-collision defect above: its
+map is the 30,000-step run's.)
+
+Validation is a strong predictor of test ACROSS ARCHITECTURES. It is also range
+restricted here, since 10 of the 12 are the top 10 by val, which should have
+depressed the correlation rather than inflated it.
+
+**The reconciliation is the residual.** Scatter around the fit is 0.0222 IoU. A
+val gap has to be large enough that the predicted test gap clears the noise on a
+DIFFERENCE of two residuals, which has SD sqrt(2) times the residual SD. Both
+this figure and the 39-model figures below were first published without that
+sqrt(2) and understated the bar by 1.41x; corrected the same day. See the
+corrected table. Two effects this project has measured, for scale:
+
+| effect | val gap | test gap | outcome |
+|---|---|---|---|
+| pretrained vs scratch (today) | +0.0325 | -0.0330 | sign flipped |
+| geometry augmentation | +0.0157 | -0.0501 | sign flipped |
+
+So the nine sign flips are not evidence that validation is broken. They are
+evidence that it has been read at a resolution it does not have. Sky's claim
+holds in the sharper form: **val differences below roughly 0.15 IoU carry no
+information about test**, and every experiment run on ALH 83010 has lived far
+inside that band.
+
+**[CORRECTED, same day]** That sentence first read "under about 0.05 IoU are
+noise", using the 12-model bar computed without the sqrt(2). Corrected, the
+12-model bar is 0.070 and the 39-model bar is 0.151. The 0.05 figure is
+withdrawn twice over: for the missing sqrt(2), and because that sample was
+restricted to the top ten by validation.
+
+**Three routes, and they do NOT agree as neatly as first claimed.** An earlier
+draft said "three independent routes now agree on the wall", citing 0.05, 0.032
+and 0.050. After both corrections the three give:
+
+| route | bar on a two-run difference |
+|---|---|
+| pre-registered probe band, set before any number arrived | 0.05 |
+| measured seed SD 0.0084 (n=3), so 2 x SD x sqrt(2) | 0.024 |
+| val-versus-test residual, 39 models | 0.151 |
+
+They span a factor of six, not "the same answer". The honest reading is that
+they measure different things, and they are not even bars on the same quantity:
+the residual route bounds a VAL gap, while the seed route and the pre-registered
+band bound a TEST difference. The seed route captures retest variance at one
+configuration, the residual route captures how poorly val transfers across
+models, and the pre-registered band was a judgement call.
+
+**[CORRECTED, same day]** This paragraph first ended "All three exceed every
+effect this project has measured, which is the conclusion that survives." That
+is false, and it reinstated the census overclaim retracted elsewhere in this
+entry. Checked against the two effects with both numbers recorded: the 0.151 val
+bar does exceed both val gaps (0.0325, 0.0157), but the 0.024 seed-derived bar
+does NOT exceed either test gap (-0.0330, -0.0501), and the 0.05 band does not
+exceed the -0.0501 augmentation test gap. What survives is narrower: the val
+residual bar exceeds both recorded val gaps by 4.6x and 9.6x, and no route places
+any recorded effect comfortably above the noise.
+
+**[SUPERSEDED, same day] The full 39-model version puts the bar at 0.151, not
+0.05.** Val IoU was recomputed from the saved `results/probs/<model>_val.npy` at
+each row's own frozen threshold, for every leaderboard model that has one (39 of
+44; five have no saved map). That removes the range restriction. Written to
+`results/val_vs_test.json`.
+
+Method self-check: 11 of the 12 recomputed values match their recorded
+`best_full_val_iou` to within 0.0024.
+
+The bar is `2 * sqrt(2) * residual_SD / slope`. The sqrt(2) is there because the
+quantity that has to clear the noise is a DIFFERENCE of two residuals.
+
+| subset | n | r | slope | residual SD | val gap needed (2 sigma) |
+|---|---|---|---|---|---|
+| all | 39 | +0.898 | +0.473 | 0.02524 | **0.1510** |
+| excluding collapsed (test >= 0.10) | 37 | +0.827 | +0.436 | 0.02547 | 0.1653 |
+| excluding weak (test >= 0.15) | 35 | +0.806 | +0.403 | 0.02449 | 0.1720 |
+| competitive only (test >= 0.20) | 24 | +0.744 | +0.426 | 0.02225 | 0.1476 |
+| C_cnn only | 31 | +0.899 | +0.465 | 0.02434 | 0.1479 |
+| pre-fix only, one regime | 28 | +0.904 | +0.416 | 0.02011 | 0.1368 |
+
+**[CORRECTION, same day]** These were first published as 0.1068, 0.1169, 0.1217,
+0.1044, 0.1046 and 0.0967, computed as `2 * residual_SD / slope` with no sqrt(2).
+That understated every bar by 1.41x. The corrected figures are above; the r,
+slope and residual SD columns are unchanged. The earlier 0.05 from the 12-model
+sample is separately WITHDRAWN, since that sample was restricted to the top ten
+by validation.
+
+Robust: the bar sits at 0.137 to 0.172 however the set is cut, residual SD stays
+at 0.020 to 0.025, and the slope stays at 0.40 to 0.47.
+
+**The scale of the problem, in one line.** The 24 competitive models (test IoU
+above 0.20) span just 0.2564 in validation IoU, and the bar is 0.1476. The bar
+is 58% of the entire spread of usable models, so this dataset can reliably
+separate about two tiers of model and nothing finer.
+
+For scale, the two effects measured here that have both a val and a test number
+recorded have val gaps of 0.0157 and 0.0325, four to nine times below the bar.
+That is two data points, not a census: the project's other effects (hierarchy,
+prune, z-refine) were not scored into this analysis, so no claim is made that
+EVERY effect ever measured falls below the line.
+
+**[DEFECT] `final_pipeline.json`'s ranking holds a stale val IoU for
+`unet2d_s30000`.** It records 0.47696, the PRE-fix value. Recomputing from the
+current saved val map gives **0.44512**, which matches the 0.4452 independently
+recorded in `results/error_cnn.json`. The saved map was rewritten by the
+2026-07-29 retrain; the ranking file was not. This also explains why `unet2d`
+and `unet2d_s30000` appeared to share a val IoU of 0.47696: `probs/unet2d.npy`
+is the pre-fix s30000 map, as established above.
+
+CAVEATS, not buried:
+
+  * A cross-model residual is not the same quantity as within-model retest
+    variance, and the two should not be added naively.
+  * Five models have no saved val map and are absent.
+  * Test IoU is systematically lower than val IoU, which is part of why the
+    slope is well under 1.
+  * **Two of the 39 are degenerate and carry heavy leverage.** `gnn_gat` and
+    `matrix_specialist` both collapsed to predicting everything foreground, so
+    their val and test IoUs are exactly the zone positive fractions (0.06661 and
+    0.05279) and they sit as coincident points at the bottom of the range.
+    Dropping them takes r from +0.898 to +0.827. The bar is stable across that
+    cut (0.151 to 0.165), but the headline correlation is not, and r = +0.898
+    should not be quoted without this.
+  * **"39 models" is not 39 independent models.** `unet2d` and `rt_dice_ctrl`
+    are the same configuration at the same seed, established elsewhere in this
+    entry, so they are one measurement entered twice.
+  * The val axis is recomputed from float16 maps while the test axis was scored
+    in float32 at run time. Quantisation noise on one axis only would inflate
+    the residual and therefore the bar.
+
+**[MEASURED] First seed variance in this project: SD 0.0084.** Fraction 0.25 of
+train at the 7,200-step budget, three seeds, test IoU 0.2823 / 0.2664 / 0.2696,
+mean 0.2727, SD 0.0084 with 2 degrees of freedom.
+
+Quoting `src/data_scaling.py:16-20` exactly, because an earlier draft of this
+entry misrepresented it: *"Single-seed differences of 0.03-0.06 sit only ~4-8 SE
+apart before counting training-seed variance, which is itself large. With n=1 per
+point there is no way to tell a real trend from run-to-run scatter."* It does NOT
+assert that scatter is 0.03 to 0.06; that straw man is withdrawn. What the
+measurement does contradict is the clause "training-seed variance, which is
+itself large": measured at 0.0084, it is smaller than the 0.0142 val noise floor,
+not larger.
+
+Separately, CHANGELOG twice attributes run-to-run variation to non-deterministic
+MPS. That mechanism looks wrong. Two executions of the same arm in
+`logs/data_scaling_v2.log` agree on every printed digit for the three epochs that
+overlap, and `unet2d` and `rt_dice_ctrl` (the same configuration at the same
+seed) agree on every metric. [HONESTY] Three epochs of one log and one row pair
+is thin evidence for a general determinism claim; no full-run or test-IoU
+determinism check has been made.
+
+[HONESTY] This does NOT retroactively make the day's pretraining gap
+significant. The 0.05 ambiguity band was registered before the numbers arrived
+and is not being revised afterwards. Three separate reasons to leave it alone:
+an SD from n=3 has a very wide confidence interval; this was measured at 7,200
+steps on 25% of train, not the probe's 30,000 steps on all of it; and the probe's
+arms differ in initialisation, which carries its own variance. Seed replicates
+at the probe's own regime would settle it.
+
+Also noted: the three seeds froze thresholds of 0.002, 0.8 and 0.002. Two of
+three sit on the documented grid floor, and the same configuration selected a
+400x different operating point across seeds while test IoU moved only 0.016.
+**[CORRECTED 2026-08-04]** The third threshold was written here as 0.00. That is
+the log's two-decimal render, the same render this file warns about elsewhere;
+`results/data_scaling_v2.json` records 0.002 for seed 2.
+
+**The multi-meteorite path was untested, and it is half broken.** `run_all` has
+never completed and `results_v2/pipeline_v2.json` does not exist, so the claim
+that adding a meteorite is a config change had never been exercised. Tested here
+against synthetic sources:
+
+  * ONE meteorite: works.
+  * TWO meteorites of the SAME in-plane size: works. Provenance is tracked per
+    slice, per-zone chondrule counts come out, and the leakage contract holds,
+    with every meteorite present in all three zones.
+  * TWO meteorites of DIFFERENT in-plane size: **crashes** at
+    the `np.concatenate` over per-meteorite zone arrays in
+    `pipeline_v2.build_multi_split` with a bare `ValueError` that
+    mentions neither meteorites nor scans. Two real scans essentially never
+    share dimensions, so this would have fired on the first day of the project's
+    stated next step.
+
+Fixed by padding each meteorite up to the common maximum and marking the padding
+INVALID, which reuses the `valid` mask the metrics already honour, and physical
+scale is preserved. `MeteoriteSource` also gained `voxel_um`, recorded and not
+acted on: padding reconciles differing pixel COUNTS but not differing pixel
+SIZES, and this model has no scale invariance.
+
+[CORRECTION, same day] An earlier draft of this entry said "nothing downstream
+changes". That is an overclaim and it is withdrawn. `valid` does exclude padded
+pixels from every loss and every metric, which was verified. But `_norm` is
+GroupNorm, which normalises over whatever spatial extent an inference tile
+covers, so a tile straddling the zero padding computes its statistics partly on
+that padding and the predictions for REAL pixels inside that tile shift.
+Constant-0 padding maximises the effect, since matrix reads around 32 CT. The
+magnitude is second order and unmeasured; the claim of no downstream effect was
+simply wrong.
+
+Verified by `tests/test_multi_meteorite.py`, which asserts the property the fix
+rests on: padded rows and columns are invalid in every zone, carry no positives,
+and the native region survives. If padding were left valid, every metric would
+score empty space as true negatives and every IoU would be wrong with nothing to
+catch it. The test also records `pos_frac` against `pos_frac_valid` (0.03884 vs
+0.04834 on the synthetic train zone) so the dilution is visible.
+
+Sky, 2026-08-04, on the one loose end: `PatchSet` draws negative patch centres
+uniformly and does not consult `valid`, so padded area costs a proportional
+share of negative draws. Not worth acting on, because the hierarchy runs as a
+FILTER ahead of the second stage and uniform-zero padding is dropped at the
+coarsest level, so the complete model never sees it.
+
+**[DEFECT] `results_v2/split_multi.json`'s regime string misdescribes its own
+counting rule.** It says 3D chondrule counts are made "by scipy.ndimage.label on
+mask & valid", which is binary connected components. The code in
+`pipeline_v2.build_multi_split`'s per-zone loop loads instance IDs and calls
+`count_chondrules_3d`, which is the same-id rule, and whose own docstring warns
+binary CC undercounts by 39% (87 against 142). The stored provenance string
+therefore names the exact method the code was written to avoid. This matters
+because that string is one of the artifacts anyone would consult to reconcile
+the 19-versus-36 question.
+
+**Data-scaling curve: 3 of 12, up from 1.** The handoff's "1 of 12" was correct
+when written, and an earlier claim in this session that the JSON held 5 runs was
+wrong. At the start of today `results/data_scaling_v2.json` held one completed
+run (frac 0.25, seed 0, test IoU 0.2823); a second (frac 0.25, seed 1) had
+trained to full-val IoU 0.3897 in an earlier session but its test scoring was cut
+off and never saved. Both remaining seeds of fraction 0.25 were run here, so that
+fraction is now complete at 3 of 3 and the curve stands at **3 of 12**. The
+intended design is 4 fractions times 3 seeds. Roughly 5 hours remain for the 9
+outstanding runs, and the runner skips completed pairs, so it is resumable.
+
+`src/data_scaling.py` gained `--frac=` and `--seed=` so a single fraction can be
+finished without committing to the whole grid. The grid had been abandoned three
+times as an all-or-nothing job.
 
 ### 2026-07-31: Classical Stage-0, the image confidence model, and what is still broken
 

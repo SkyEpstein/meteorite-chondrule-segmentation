@@ -30,12 +30,92 @@ Self-test:  python -m src.cascade      (tiny synthetic zones; no real data)
 """
 from __future__ import annotations
 import hashlib
+import os
 import time
 import numpy as np
 
 from . import run_families
 from .models_cnn import CNNRunner, UNet2D, dice_loss
 from .models_gnn import GNNRunner, N_SEGMENTS
+
+
+def _slice_key(sl):
+    """Content key for one slice, matching CascadeRunner._key's convention."""
+    h = hashlib.sha1(np.ascontiguousarray(sl).tobytes()).hexdigest()[:16]
+    return (sl.shape, h)
+
+
+def classical_aux_lookup(raw_by_zone, prob_dir="results/probs",
+                         prefix="classical_xf"):
+    """Build an `aux_lookup` over the stored classical cross-fit probabilities.
+
+    `raw_by_zone` maps zone name to that zone's (n,H,W) raw volume. The stored
+    maps are indexed by POSITION within a zone, but `aux_lookup` is handed a
+    slice ARRAY and no index, so the bridge is a content hash: the SAME slice
+    always resolves to the SAME map, which makes a repeated or reordered call
+    deterministic.
+
+    What the hash does NOT give you is correspondence. Row i of the .npy is
+    taken to be slice i of the zone, and nothing here can check that; it is the
+    writer's contract. `src/classical_crossfit.py` currently writes
+    index-aligned. If that ever changes, this returns a real probability map
+    belonging to a DIFFERENT slice with no error, and the arm then measures
+    noise that reads as a genuine null result. A duplicate slice hash raises,
+    because two slices that hash alike cannot be resolved to one map.
+
+    Raises rather than falling back: `CascadeRunner` can recompute a missing map
+    from its GNN, but there is no classical model in memory here, so a miss is a
+    bug and must be loud.
+    """
+    table = {}
+    for zone, raw in raw_by_zone.items():
+        path = os.path.join(prob_dir, f"{prefix}_{zone}.npy")
+        probs = np.load(path, mmap_mode="r")
+        if probs.shape[0] != raw.shape[0]:
+            raise ValueError(
+                f"{path} holds {probs.shape[0]} maps but zone {zone!r} has "
+                f"{raw.shape[0]} slices")
+        if probs.shape[1:] != raw.shape[1:]:
+            raise ValueError(
+                f"{path} maps are {probs.shape[1:]} but zone {zone!r} slices "
+                f"are {raw.shape[1:]}")
+        for i in range(raw.shape[0]):
+            k = _slice_key(raw[i])
+            if k in table:
+                raise ValueError(
+                    f"duplicate slice content at zone {zone!r} index {i}; two "
+                    f"slices hash alike so the aux channel cannot be resolved "
+                    f"unambiguously")
+            table[k] = (zone, i, probs[i])
+
+    def lookup(sl):
+        k = _slice_key(sl)
+        hit = table.get(k)
+        if hit is None:
+            raise KeyError(
+                f"no classical map for a {sl.shape} slice; it is not in any "
+                f"zone passed to classical_aux_lookup, so the aux channel "
+                f"would be missing rather than wrong")
+        # One slice at a time: the .npy files are memory-mapped, so converting
+        # the whole stack here would pull every map into memory at once.
+        a = np.asarray(hit[2], np.float32)
+        # [CORRECTED 2026-08-04] This message used to say `classical_crossfit`
+        # asserts every slice is finite before saving, so a NaN could only mean
+        # external corruption. That assertion covers `train_aux` ONLY; `val_aux`
+        # and `test_aux` are saved a few lines later with no finiteness check.
+        if not np.isfinite(a).all():
+            raise ValueError(
+                f"classical map for zone {hit[0]!r} index {hit[1]} is not all "
+                f"finite. A NaN aux channel propagates to NaN logits and NaN "
+                f"loss with no other symptom, so this raises rather than "
+                f"training on it. Note `classical_crossfit` asserts finiteness "
+                f"before saving on the TRAIN file only; the val and test files "
+                f"are written unchecked, so a NaN in those needs no external "
+                f"corruption, while a NaN in train does mean the file was "
+                f"written by something else or was truncated")
+        return a
+
+    return lookup
 
 
 # ---------------------------------------------------------------------------

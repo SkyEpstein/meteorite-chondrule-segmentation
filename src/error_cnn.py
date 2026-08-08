@@ -22,16 +22,36 @@ Output : a per-pixel predicted-error map, usable as a prune score exactly like
 model's mistakes are honest (it memorises train, so train-zone errors describe a
 distribution that exists nowhere else; constitution v3+).
 
-[LEAKAGE][MUST] **Val is SPLIT.** A U-Net has orders of magnitude more capacity
-than a ridge regressor, so fitting it on val AND choosing its prune cutoff on the
-same val would let it memorise those errors and report a val score that does not
-transfer. Val is therefore halved along z with a buffer: the net trains on half
-A, the prune cutoff is selected on half B, and TEST is scored once with both
-frozen. The regressors it is compared against do NOT do this — they fit and
-select on all of val — so if anything this handicaps the U-Net.
+[LEAKAGE][MUST] **The net never grades a slice it was fitted on.** A U-Net has
+orders of magnitude more capacity than a ridge regressor, so fitting it on val
+AND choosing its prune cutoff on the same val would let it memorise those errors
+and report a val score that does not transfer. The default protocol is now k-fold
+cross-fitting inside the val slab (`fit_error_unet_cv`): every val slice gets an
+error map from a fold model that did not see it, the prune cutoff is chosen on
+those out-of-fold maps, one final net is fitted on all of val, and TEST is scored
+once with that net and that cutoff frozen. Folds are contiguous and buffered
+(reused from `classical_crossfit.contiguous_folds`) because adjacent CT slices
+are near-duplicates. The regressors this is compared against hold out nothing at
+all: they fit and select on all of val.
+
+[WHAT CHANGED, 2026-08-06] The previous arrangement fitted the net on ONE
+contiguous 28-slice half of val and picked the cutoff on the other 28
+(`split_val`, still available via `cv=False` so the recorded run reproduces).
+That run measured test IoU 0.11752 against a base of 0.29443 and a free margin
+baseline of 0.30279, and it did not beat margin on the held-out half either.
+Cross-fitting raises the per-fold fit set from 28 slices to 40-44 and the
+cutoff-selection set from 28 slices to all 60. This is a TEST of one hypothesis,
+that fit-set size was the binding constraint. It is not a claim that the score
+will improve. The val slab still holds the same few chondrules, so the same
+collapse is a possible outcome.
+
+[COST] k folds plus the final all-val fit is k + 1 trainings, so roughly k + 1
+times the compute of the single-split run. At the default k = 5 that is six fits
+where there used to be one.
 
 [HONESTY] Half of a 60-slice val slab is 30 slices and roughly 9-10 chondrules.
-That is very little to fit an image model on, and it is the honest amount
+Cross-fitting lifts each fold's fit set to 40-44 slices. That is more, and it is
+still very little to fit an image model on, and it is the honest amount
 available. A poor result here is as consistent with "too few chondrules" as with
 "the idea does not work"; only the classical arm (25% graded vs the CNN's 1.19%)
 can separate those, which is why this runs on BOTH base maps.
@@ -40,9 +60,11 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from .classical_crossfit import contiguous_folds
 from .models_cnn import DEVICE, PAD_MULT, UNet2D, normalize
 
 VAL_BUFFER = 4          # slices dropped between the two val halves
+CV_FOLDS = 5            # folds inside the val slab, matching classical_crossfit
 
 
 def split_val(n, buffer=VAL_BUFFER):
@@ -51,6 +73,9 @@ def split_val(n, buffer=VAL_BUFFER):
     Contiguous, not random: adjacent CT slices are near-duplicates, so a random
     split would leak half A into half B — the same reason the project's main
     split uses contiguous slabs with a 12-slice buffer.
+
+    Superseded by `fit_error_unet_cv` as the default. Kept so the recorded
+    28/28 run stays reproducible.
     """
     half = (n - buffer) // 2
     a = np.arange(0, half)
@@ -113,6 +138,9 @@ def fit_error_unet(raw, prob, mask, valid, idx, epochs=40, steps=120, batch=8,
         if ep % 5 == 0 or ep == epochs - 1:
             print(f"    [error_unet] epoch {ep + 1}/{epochs} L1={tot / steps:.5f}",
                   flush=True)
+    # Carried on the model so a cross-fitted run can record each fold's final
+    # loss without changing this function's return type.
+    net.final_train_l1 = float(tot / steps)
     return net.eval()
 
 
@@ -142,6 +170,46 @@ def predict_error(net, raw, prob, tile=256, halo=32):
     return out
 
 
+def fit_error_unet_cv(raw, prob, mask, valid, k=CV_FOLDS, buffer=VAL_BUFFER,
+                      **fit_kw):
+    """Cross-fit the error U-Net inside the val slab. Returns (oof, net, folds).
+
+    `oof_error[i]` is predicted by a fold model that never saw slice i, nor any
+    slice within `buffer` of it, so the prune cutoff can be selected on ALL n val
+    slices instead of on a 28-slice half. `final_net` is fitted on every val
+    slice and is the model applied to TEST. `per_fold` records each fold's
+    held-out count, fit count and final training L1 so the run is auditable.
+
+    Folds come from `classical_crossfit.contiguous_folds`, which is contiguous in
+    z and drops a buffer either side of the held-out block. Adjacent CT slices
+    are near-duplicates, so random folds would leave the out-of-fold predictions
+    effectively in-fold.
+
+    `**fit_kw` goes straight to `fit_error_unet`, so epochs/steps/base stay with
+    the caller.
+
+    [COST] k + 1 fits, roughly k + 1 times the compute of the single-split path.
+    """
+    P = np.asarray(prob)
+    n = int(P.shape[0])
+    folds = contiguous_folds(n, k, buffer)
+    oof = np.zeros(P.shape, np.float32)
+    per_fold = []
+    for j, (held, fit_idx) in enumerate(folds):
+        print(f"  [error_unet cv] fold {j + 1}/{len(folds)}: fit on "
+              f"{len(fit_idx)} slices, predict held-out {held[0]}-{held[-1]} "
+              f"({len(held)})", flush=True)
+        net = fit_error_unet(raw, prob, mask, valid, fit_idx, **fit_kw)
+        oof[held] = predict_error(net, raw[held], prob[held])
+        per_fold.append({"fold": j + 1, "n_held_out": int(len(held)),
+                         "n_fit": int(len(fit_idx)),
+                         "final_train_l1": float(net.final_train_l1)})
+    print(f"  [error_unet cv] final fit on all {n} val slices, for TEST",
+          flush=True)
+    final_net = fit_error_unet(raw, prob, mask, valid, np.arange(n), **fit_kw)
+    return oof, final_net, per_fold
+
+
 def _selftest():
     """The net must LEARN something: L1 on a trivial synthetic task must drop."""
     rng = np.random.default_rng(0)
@@ -166,8 +234,12 @@ def _selftest():
 
 if __name__ == "__main__":
     a, b = split_val(60)
-    print(f"val split: train on {len(a)} slices {a[0]}-{a[-1]}, "
+    print(f"val split [cv=False]: train on {len(a)} slices {a[0]}-{a[-1]}, "
           f"cutoff on {len(b)} slices {b[0]}-{b[-1]}, buffer {VAL_BUFFER}")
+    fs = contiguous_folds(60, CV_FOLDS, VAL_BUFFER)
+    print(f"val cross-fit [default]: {len(fs)} folds, held out "
+          f"{[len(h) for h, _ in fs]}, fitted on {[len(f) for _, f in fs]}, "
+          f"buffer {VAL_BUFFER}")
     r = _selftest()
     print(f"blind-spot predicted error {r['pred_err_in_blindspot']:.4f} vs "
           f"elsewhere {r['pred_err_elsewhere']:.4f} "

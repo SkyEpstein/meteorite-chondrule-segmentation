@@ -120,6 +120,62 @@ def fig_overlay(R, M, V, P, n=3):
     print("  poc_overlay.png")
 
 
+def _per_slice_iou(M, V, P):
+    """(n,) per-slice IoU at THR, NaN where a slice has no valid union."""
+    pred = (P >= THR) & V
+    n = M.shape[0]
+    inter = (pred & M & V).reshape(n, -1).sum(1)
+    union = ((pred | (M & V)) & V).reshape(n, -1).sum(1)
+    return np.where(union > 0, inter / np.maximum(union, 1), np.nan)
+
+
+def fig_overlay_spread(R, M, V, P):
+    """The same overlay, but on slices spanning the IoU DISTRIBUTION.
+
+    `fig_overlay` shows the busiest slices, which are the most legible but not
+    representative: on this model all four score above the volume IoU. A reader
+    who takes them as typical comes away optimistic. This picks the worst, 25th,
+    median, 75th and best slice instead, and captions each with its percentile,
+    so the spread is visible rather than implied.
+    """
+    psi = _per_slice_iou(M, V, P)
+    ok = np.where(~np.isnan(psi))[0]
+    order = ok[np.argsort(psi[ok])]
+    picks = [("worst", order[0]),
+             ("25th pct", order[len(order) // 4]),
+             ("median", order[len(order) // 2]),
+             ("75th pct", order[3 * len(order) // 4]),
+             ("best", order[-1])]
+
+    fig, axes = plt.subplots(len(picks), 4, figsize=(15, 3.9 * len(picks)))
+    axes = np.atleast_2d(axes)
+    for r, (label, i) in enumerate(picks):
+        pred = (P[i] >= THR) & V[i]
+        axes[r, 0].imshow(_norm(R[i]), cmap="gray")
+        axes[r, 0].set_title(f"raw micro-CT — test slice {i} ({label})", fontsize=10)
+        axes[r, 1].imshow(_norm(R[i]), cmap="gray")
+        axes[r, 1].imshow(np.ma.masked_where(~(M[i] & V[i]), M[i]),
+                          cmap=ListedColormap(["#00E5FF"]), alpha=.55)
+        axes[r, 1].set_title("hand annotation (truth)", fontsize=10)
+        im = axes[r, 2].imshow(P[i], cmap="magma", vmin=0, vmax=max(P[i].max(), 1e-3))
+        axes[r, 2].set_title("model probability", fontsize=10)
+        plt.colorbar(im, ax=axes[r, 2], fraction=.046)
+        axes[r, 3].imshow(_error_map(pred, M[i], V[i]), cmap=ERR_CMAP,
+                          vmin=0, vmax=3, interpolation="nearest")
+        axes[r, 3].set_title(f"{label}: slice IoU {psi[i]:.3f}", fontsize=10)
+        for a in axes[r]:
+            a.set_xticks([]); a.set_yticks([])
+    axes[0, 3].legend(handles=LEGEND, fontsize=8, loc="upper right", framealpha=.85)
+    lo, hi = float(np.nanmin(psi)), float(np.nanmax(psi))
+    fig.suptitle("Held-out test slices spanning the per-slice IoU distribution\n"
+                 f"volume IoU {TEST_IOU:.3f}; per-slice median "
+                 f"{float(np.nanmedian(psi)):.3f}, range {lo:.3f} to {hi:.3f} "
+                 f"(U-Net, 30k steps, thr {THR:g})", fontsize=12)
+    plt.tight_layout(rect=(0, 0, 1, .975))
+    plt.savefig(f"{FIG}/poc_overlay_spread.png", dpi=110); plt.close()
+    print("  poc_overlay_spread.png")
+
+
 def fig_error_anatomy(R, M, V, P, crop=200):
     """Where is the IoU actually lost? Zoom on the largest chondrules."""
     from scipy import ndimage

@@ -60,6 +60,14 @@ sublinearly and the minimum detectable effect (0.0142 IoU) does NOT improve.
 This makes the confidence model better FIT; it does not make the comparison
 between confidence models easier to resolve.
 
+[CORRECTED 2026-08-04] "the same 19 validation chondrules" is the wrong label.
+19 is the val zone's BINARY connected-components count; the pipeline's own
+same-id rule gives 36 over identical voxels (`src/recount_chondrules.py`).
+`SE_REF_N` was left at 19 deliberately, because the `SE_REF_IOU = 0.0071` it
+pairs with was bootstrapped over 60 validation SLICES, so neither chondrule
+count was ever the resampling unit. The 0.0142 floor is unchanged, and so is the
+point that 8 orientations of the same objects do not add independent samples.
+
 [SEAM] Features are built PER ORIENTATION and only then pooled as rows. The 8
 volumes are never concatenated along z: `z_agreement` and `z_smooth` look along
 axis 0, so a stacked volume would compute z-features across an artificial seam

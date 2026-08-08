@@ -5,10 +5,25 @@ meteorite we have (ALH 83010: 531 kept slices, 397 annotated): **142 3D
 chondrules in the whole volume, only 19 in validation**. A bootstrap over
 validation slices puts the SE of a val-IoU difference at +/-0.0071 IoU, so the
 minimum detectable effect is ~0.014 IoU — larger than almost every method effect
-measured, which is why six val/test comparisons flipped sign. Adding meteorites
+measured, which is why nine val/test comparisons flipped sign. Adding meteorites
 is the only lever that moves that floor.
 
-This module makes adding one a CONFIG CHANGE:
+[CORRECTED 2026-08-04] That sign-flip count read six when this docstring was
+written. It is nine as of 2026-08-04; the pretraining probe was the ninth.
+
+[CORRECTED 2026-08-04] "only 19 in validation" mixes two counting rules. 142 is
+the same-id 3D total; 19 is the BINARY connected-components count of the val
+zone, and the same-id rule gives 36 there. `recount_chondrules.py` measured both
+over identical voxels: train 63/49, val 36/19, test 43/24. `SE_REF_N` was left at
+19 deliberately, because the +/-0.0071 it pairs with was bootstrapped over 60
+validation SLICES, so neither chondrule count was ever the resampling unit. The
+0.0071 and the ~0.014 floor are unchanged, and so is the conclusion.
+
+[CORRECTED 2026-08-04] Adding a meteorite was NOT a config change. Two scans of
+different in-plane size crashed `build_multi_split` at the concatenate below.
+Fixed by padding to the common in-plane size with the padding marked invalid
+(`tests/test_multi_meteorite.py` covers it), but `run_all` with two sources has
+still never completed end to end. What the config below does today:
 
     srcs = [MeteoriteSource("ALH83010", "ALH83010_z_crop_every4",
                             "ALH83010_z_crop_every4_labeled"),
@@ -92,12 +107,20 @@ class MeteoriteSource:
     `every_n` records the slice subsampling of the ORIGINAL scan (ALH 83010 kept
     every 4th of ~2121 slices), so a buffer of B kept-slices is B * every_n
     original slices of physical separation.
+
+    `voxel_um` is the in-plane micrometres per pixel. It is recorded, not acted
+    on. Padding reconciles differing pixel COUNTS but not differing pixel SIZES:
+    if two scans differ in resolution, chondrules appear at different pixel
+    scales and this model has no scale invariance. Recording it means the
+    mismatch is visible the moment a second scan lands instead of being
+    discovered later.
     """
 
     name: str
     raw_dir: str
     label_dir: str
     every_n: int = 4
+    voxel_um: float | None = None
 
     def list_pairs(self):
         """Return (raw_paths, lab_paths), sorted and 1:1 by z-order.
@@ -254,6 +277,8 @@ def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
             "raw_dir": src.raw_dir,
             "label_dir": src.label_dir,
             "every_n": int(src.every_n),
+            "voxel_um": (None if src.voxel_um is None else float(src.voxel_um)),
+            "native_shape": None,
             "n_pairs": int(len(raw_paths)),
             "band": [int(b0), int(b1)],
             "N": int(N),
@@ -301,14 +326,40 @@ def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
                 "pos_pixels": int(M.sum()),
                 "pos_frac": float(M.mean()),
             }
+        h, w = R.shape[1:]
+        entry["native_shape"] = [int(h), int(w)]
         per_source.append(entry)
+
+    # Meteorites do not share in-plane dimensions, and concatenating them raw
+    # raises a numpy error that says nothing about scans. Pad each up to the
+    # common maximum and mark the padding INVALID. `valid` excludes the padding
+    # from every loss and every metric, which is what makes the fix sound.
+    # It does NOT hide the padding from everything downstream, on two counts.
+    # `PatchSet.sample` draws negative patch centres uniformly and never
+    # consults `valid`, so padded area costs a proportional share of negative
+    # draws. And `_norm` is GroupNorm, which normalises over whatever spatial
+    # extent an inference tile covers, so a tile straddling zero padding shifts
+    # the predictions for the real pixels inside it. Padding is anchored
+    # top-left, so original pixel coordinates are unchanged.
+    shapes = sorted({tuple(int(v) for v in a.shape[1:])
+                     for z in ZONES for a in acc[z]["raw"]})
+    Hm = max(s[0] for s in shapes)
+    Wm = max(s[1] for s in shapes)
+    padded = len(shapes) > 1
+
+    def _pad(a, fill):
+        ph, pw = Hm - a.shape[1], Wm - a.shape[2]
+        if not ph and not pw:
+            return a
+        return np.pad(a, ((0, 0), (0, ph), (0, pw)),
+                      mode="constant", constant_values=fill)
 
     out = {}
     for z in ZONES:
         out[z] = {
-            "raw": np.concatenate(acc[z]["raw"], axis=0),
-            "mask": np.concatenate(acc[z]["mask"], axis=0),
-            "valid": np.concatenate(acc[z]["valid"], axis=0),
+            "raw": np.concatenate([_pad(a, 0) for a in acc[z]["raw"]], axis=0),
+            "mask": np.concatenate([_pad(a, False) for a in acc[z]["mask"]], axis=0),
+            "valid": np.concatenate([_pad(a, False) for a in acc[z]["valid"]], axis=0),
             "provenance": np.array(acc[z]["provenance"], dtype=object),
             "abs_slices": np.asarray(acc[z]["abs_slices"], np.int32),
         }
@@ -325,13 +376,20 @@ def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
         "val_frac": float(val_frac),
         "test_frac": float(test_frac),
         "buffer": int(buffer),
+        "padded_to": [int(Hm), int(Wm)],
+        "native_shapes": [list(s) for s in shapes],
+        "padding_applied": bool(padded),
         "n_meteorites": int(len(per_source)),
         "meteorites": per_source,
+        # `pos_frac` is over ALL pixels, so padding dilutes it whenever
+        # meteorites differ in size. Read `pos_frac_valid` in that case.
         "zone_stats": {
             z: {"n_slices": int(out[z]["raw"].shape[0]),
                 "n_chondrules_3d": int(chondrules[z]),
                 "pos_pixels": int(out[z]["mask"].sum()),
                 "pos_frac": float(out[z]["mask"].mean()),
+                "pos_frac_valid": float(out[z]["mask"][out[z]["valid"]].mean())
+                                  if out[z]["valid"].any() else float("nan"),
                 "provenance": list(out[z]["provenance"])}
             for z in ZONES
         },
@@ -345,6 +403,9 @@ def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
 
     print(f"=== multi-meteorite split ({len(per_source)} meteorite(s)) ===",
           flush=True)
+    if padded:
+        print(f"  NOTE: meteorites differ in size {shapes}; padded to "
+              f"{Hm}x{Wm} and the padding marked invalid", flush=True)
     for e in per_source:
         print(f"  {e['name']}: {e['n_pairs']} pairs, band {e['band']} "
               f"(N={e['N']}), val_zone={e['val_zone_band']} "

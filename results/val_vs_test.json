@@ -1,0 +1,382 @@
+{
+  "regime": "val IoU recomputed from saved results/probs/<model>_val.npy at each row's own val-frozen threshold; test IoU from results/leaderboard_all.json; VAL zone only, IoU only",
+  "n_models": 39,
+  "skipped": [
+    "long_p1_ctrl_b32",
+    "long_p1_geom_b32",
+    "unet25d_k5_s15000",
+    "unet25d_k5_s30000",
+    "unet2d_s15000"
+  ],
+  "self_check_worst_abs_diff": 0.03183920011094743,
+  "pearson_r": 0.8976620693886865,
+  "spearman_rho": 0.8707799778325278,
+  "slope": 0.4729171240544662,
+  "residual_sd": 0.025242409289811127,
+  "min_informative_val_gap_2sigma": 0.15097003575836734,
+  "bar_formula": "2*sqrt(2)*residual_sd/slope; the difference of two residuals has SD sqrt(2)*residual_sd",
+  "subsets": [
+    {
+      "label": "all",
+      "n": 39,
+      "pearson_r": 0.8976620693886865,
+      "slope": 0.4729171240544662,
+      "residual_sd": 0.025242409289811127,
+      "min_informative_val_gap_2sigma": 0.15097003575836734
+    },
+    {
+      "label": "excluding collapsed (test >= 0.10)",
+      "n": 37,
+      "pearson_r": 0.8273312902939929,
+      "slope": 0.435875434092374,
+      "residual_sd": 0.025468433824232514,
+      "min_informative_val_gap_2sigma": 0.1652665037277514
+    },
+    {
+      "label": "excluding weak (test >= 0.15)",
+      "n": 35,
+      "pearson_r": 0.8060406253432106,
+      "slope": 0.40257693001229156,
+      "residual_sd": 0.024488279717565422,
+      "min_informative_val_gap_2sigma": 0.172049885196897
+    },
+    {
+      "label": "competitive only (test >= 0.20)",
+      "n": 24,
+      "pearson_r": 0.7439885260003799,
+      "slope": 0.42647248516807834,
+      "residual_sd": 0.022252739221813103,
+      "min_informative_val_gap_2sigma": 0.1475833808834679
+    },
+    {
+      "label": "C_cnn only",
+      "n": 31,
+      "pearson_r": 0.8994751893934193,
+      "slope": 0.4653409479733585,
+      "residual_sd": 0.024340683463063204,
+      "min_informative_val_gap_2sigma": 0.14794711198665142
+    },
+    {
+      "label": "pre-fix only",
+      "n": 28,
+      "pearson_r": 0.9041471983000705,
+      "slope": 0.41583634731438684,
+      "residual_sd": 0.02010844382478937,
+      "min_informative_val_gap_2sigma": 0.1367732001249751
+    }
+  ],
+  "rows": [
+    {
+      "model": "resunet18_pretrained_s30000",
+      "val_iou": 0.5281616318429574,
+      "test_iou": 0.3026876354410662,
+      "threshold": 0.018000000000000002,
+      "tier": "C_cnn",
+      "tiler_regime": "post"
+    },
+    {
+      "model": "resunet18_scratch_s30000",
+      "val_iou": 0.49568884727407386,
+      "test_iou": 0.33568544332220573,
+      "threshold": 0.002,
+      "tier": "C_cnn",
+      "tiler_regime": "post"
+    },
+    {
+      "model": "hrnet_lite",
+      "val_iou": 0.4779322925153277,
+      "test_iou": 0.2598313189282684,
+      "threshold": 0.2,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "unet2d",
+      "val_iou": 0.47632174292984797,
+      "test_iou": 0.23142512979470478,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "unet2d_s30000_auggeom",
+      "val_iou": 0.4607783428074925,
+      "test_iou": 0.24403939497060267,
+      "threshold": 0.002,
+      "tier": "C_cnn",
+      "tiler_regime": "post"
+    },
+    {
+      "model": "swin_lite",
+      "val_iou": 0.4594665462770421,
+      "test_iou": 0.25515913224722353,
+      "threshold": 0.55,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "unet2d_s30000",
+      "val_iou": 0.44512049072944504,
+      "test_iou": 0.2940943253960683,
+      "threshold": 0.002,
+      "tier": "C_cnn",
+      "tiler_regime": "post"
+    },
+    {
+      "model": "tiramisu",
+      "val_iou": 0.4300314013549699,
+      "test_iou": 0.2477619979989387,
+      "threshold": 0.5,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "unet25d_k5",
+      "val_iou": 0.4244795632184197,
+      "test_iou": 0.2546883191822603,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "attention_unet",
+      "val_iou": 0.41842538733878365,
+      "test_iou": 0.21577923081715006,
+      "threshold": 0.3,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "resunet",
+      "val_iou": 0.416827745961967,
+      "test_iou": 0.24403267237026413,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "axial_unet",
+      "val_iou": 0.4164429092119677,
+      "test_iou": 0.22294471000416122,
+      "threshold": 0.018000000000000002,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "gnn_graph_unet",
+      "val_iou": 0.40749483010378235,
+      "test_iou": 0.19066199187347047,
+      "threshold": 0.45,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "dilated_cnn",
+      "val_iou": 0.4067522488622986,
+      "test_iou": 0.21885960243132666,
+      "threshold": 0.45,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "segnext_lite",
+      "val_iou": 0.40324665817686595,
+      "test_iou": 0.22058747560952938,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "unet_crf",
+      "val_iou": 0.39399631193525986,
+      "test_iou": 0.2241866892881766,
+      "threshold": 0.45,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "segnet",
+      "val_iou": 0.3925147821736462,
+      "test_iou": 0.19326955640964297,
+      "threshold": 0.3,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "fcn8",
+      "val_iou": 0.3922582569763452,
+      "test_iou": 0.2144046224108882,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "rt_dice_ctrl",
+      "val_iou": 0.38991590518968877,
+      "test_iou": 0.23142512979470478,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "unetpp",
+      "val_iou": 0.3844185438252883,
+      "test_iou": 0.20371156254367126,
+      "threshold": 0.3,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "autoencoder",
+      "val_iou": 0.38065876597903653,
+      "test_iou": 0.22828385022796796,
+      "threshold": 0.45,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "convlstm",
+      "val_iou": 0.37828893621096704,
+      "test_iou": 0.22097498492908804,
+      "threshold": 0.5,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "gnn_chebnet",
+      "val_iou": 0.37548088032677795,
+      "test_iou": 0.18371497096591644,
+      "threshold": 0.35,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "gnn_graphsage",
+      "val_iou": 0.37435645647383753,
+      "test_iou": 0.17825312140307648,
+      "threshold": 0.2,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "deeplabv3p",
+      "val_iou": 0.37198732741328083,
+      "test_iou": 0.22215258745202388,
+      "threshold": 0.15000000000000002,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "superpixel_gcn",
+      "val_iou": 0.3706894834649109,
+      "test_iou": 0.17725391823160602,
+      "threshold": 0.2,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "gnn_resgcn",
+      "val_iou": 0.35991241854203504,
+      "test_iou": 0.19547565712688358,
+      "threshold": 0.55,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "rt_dice_dilate1",
+      "val_iou": 0.3385864724419904,
+      "test_iou": 0.21964306633579952,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "cascade_gnn_cnn",
+      "val_iou": 0.3217983590447882,
+      "test_iou": 0.20247045975030678,
+      "threshold": 0.03,
+      "tier": "E_cascade",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "vit_seg",
+      "val_iou": 0.29652963761279894,
+      "test_iou": 0.19761598903638578,
+      "threshold": 0.25,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "siren_seg",
+      "val_iou": 0.27599859979447944,
+      "test_iou": 0.12438378915589171,
+      "threshold": 0.45,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "patch_cnn",
+      "val_iou": 0.27175203054159563,
+      "test_iou": 0.21186199074794096,
+      "threshold": 0.45,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "gnn_gin",
+      "val_iou": 0.2634389672990861,
+      "test_iou": 0.15673843244331626,
+      "threshold": 0.55,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "convnext_unet",
+      "val_iou": 0.22594103716960331,
+      "test_iou": 0.1332421567897358,
+      "threshold": 0.55,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "rt_tversky_recall",
+      "val_iou": 0.20107930768095447,
+      "test_iou": 0.1528992730689315,
+      "threshold": 0.9500000000000001,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "pixel_mlp",
+      "val_iou": 0.18784624173083472,
+      "test_iou": 0.1554238003487121,
+      "threshold": 0.5,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "rt_focal_tversky",
+      "val_iou": 0.18767512089096733,
+      "test_iou": 0.16026059819325267,
+      "threshold": 0.55,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "gnn_gat",
+      "val_iou": 0.06661158717469452,
+      "test_iou": 0.052785267105351384,
+      "threshold": 0.05,
+      "tier": "D_gnn",
+      "tiler_regime": "n/a"
+    },
+    {
+      "model": "matrix_specialist",
+      "val_iou": 0.06661158717469452,
+      "test_iou": 0.052785267105351384,
+      "threshold": 0.002,
+      "tier": "C_cnn",
+      "tiler_regime": "pre"
+    }
+  ]
+}

@@ -68,29 +68,62 @@ def fig_budget():
     d = _load("results/leaderboard_all.json")
     if not d:
         return
-    m = {r["model"]: r.get("iou") for r in d["leaderboard"]}
+    # Keep the whole row, not just the IoU: every point has to carry its own
+    # `tiler_regime` so the marker can show whether it predates the tiler fix.
+    rows = {r["model"]: r for r in d["leaderboard"]}
     series = {
-        "unet2d (2D)": [(3000, m.get("unet2d")), (7200, m.get("long_p1_ctrl_b32")),
-                        (15000, m.get("unet2d_s15000")), (30000, m.get("unet2d_s30000"))],
-        "unet25d_k5 (2.5D)": [(3000, m.get("unet25d_k5")),
-                              (15000, m.get("unet25d_k5_s15000")),
-                              (30000, m.get("unet25d_k5_s30000"))],
+        "unet2d (2D)": [
+            (3000, rows.get("unet2d", {}).get("iou"),
+             rows.get("unet2d", {}).get("tiler_regime", "unknown")),
+            (7200, rows.get("long_p1_ctrl_b32", {}).get("iou"),
+             rows.get("long_p1_ctrl_b32", {}).get("tiler_regime", "unknown")),
+            (15000, rows.get("unet2d_s15000", {}).get("iou"),
+             rows.get("unet2d_s15000", {}).get("tiler_regime", "unknown")),
+            (30000, rows.get("unet2d_s30000", {}).get("iou"),
+             rows.get("unet2d_s30000", {}).get("tiler_regime", "unknown")),
+        ],
+        "unet25d_k5 (2.5D)": [
+            (3000, rows.get("unet25d_k5", {}).get("iou"),
+             rows.get("unet25d_k5", {}).get("tiler_regime", "unknown")),
+            (15000, rows.get("unet25d_k5_s15000", {}).get("iou"),
+             rows.get("unet25d_k5_s15000", {}).get("tiler_regime", "unknown")),
+            (30000, rows.get("unet25d_k5_s30000", {}).get("iou"),
+             rows.get("unet25d_k5_s30000", {}).get("tiler_regime", "unknown")),
+        ],
     }
     fig, ax = plt.subplots(figsize=(7.5, 5))
     for lbl, pts in series.items():
-        pts = [(s, v) for s, v in pts if v is not None]
+        pts = [(s, v, g) for s, v, g in pts if v is not None]
         if len(pts) < 2:
             continue
-        xs, ys = zip(*pts)
-        ax.plot(xs, ys, "o-", lw=2, ms=7, label=lbl)
-        for x, y in pts:
+        xs, ys, gs = zip(*pts)
+        regs = set(gs)
+        if len(regs) > 1:
+            # A line drawn through two inference regimes is two curves pretending
+            # to be one, so say it on stdout as well as in the title.
+            print(f"  WARNING: series {lbl!r} mixes inference regimes {sorted(regs)}; "
+                  f"the connecting line is not a like-for-like curve")
+        line, = ax.plot(xs, ys, "-", lw=2, label=lbl)
+        col = line.get_color()
+        # Markers, not the line, carry the regime: filled = post-fix, open = pre-fix
+        # or unknown. Same colour as the line so the series still reads as one.
+        post = [(s, v) for s, v, g in pts if g == "post"]
+        open_ = [(s, v) for s, v, g in pts if g != "post"]
+        if post:
+            ax.plot([s for s, _ in post], [v for _, v in post],
+                    ls="none", marker="o", ms=7, color=col)
+        if open_:
+            ax.plot([s for s, _ in open_], [v for _, v in open_],
+                    ls="none", marker="o", ms=7, color=col, markerfacecolor="none")
+        for x, y, _ in pts:
             ax.annotate(f"{y:.3f}", (x, y), textcoords="offset points",
                         xytext=(0, 8), ha="center", fontsize=8)
     ax.axhline(0.203, color=C_CLASSIC, ls="--", lw=1.5, label="classical-ML 0.203")
     ax.set_xscale("log"); ax.set_xlabel("training steps (log)")
     ax.set_ylabel("test foreground IoU")
     ax.set_title("Budget scaling — MIXED INFERENCE REGIMES, DO NOT QUOTE\n"
-                 "only the 30k point is post-tiler-fix (0.29409); the rest predate it",
+                 "only the 30k point is post-tiler-fix (0.29409); the rest predate it\n"
+                 "filled marker = post-fix, open marker = pre-fix",
                  fontsize=10)
     ax.grid(alpha=.3); ax.legend(fontsize=9)
     plt.tight_layout(); plt.savefig(f"{FIG}/budget_scaling.png", dpi=120); plt.close()
@@ -121,14 +154,19 @@ def fig_data_scaling():
                 "s--", lw=1.5, ms=6, color=C_CLASSIC, alpha=.8,
                 label="superseded: contiguous subsets, 1 seed")
 
-    # The measurement floor. Effects below this are unresolvable at n=19.
-    ax.axhspan(min(mu) - 0.0071, min(mu) + 0.0071, color="k", alpha=.05)
+    # The measurement floor. Effects below this are unresolvable at the anchor
+    # size. Labelled so the band does not read as an unexplained grey stripe.
+    ax.axhspan(min(mu) - 0.0071, min(mu) + 0.0071, color="k", alpha=.05,
+               label="measurement band, +/-0.0071 IoU")
     ax.set_xlabel("annotated training slices (of 213 available)")
     ax.set_ylabel("test foreground IoU")
+    # Wrapped to three short lines. As one line it overflowed the axes and the
+    # ends were clipped, which made the figure look unfinished on GitHub.
+    steps = d.get("runs", [{}])[0].get("steps", "?")
     ax.set_title("Does more annotated data help?\n"
-                 f"fixed {d.get('runs', [{}])[0].get('steps', '?')}-step budget; "
-                 "shape, not height (30k-step run scores 0.29409 post-tiler-fix; "
-                 "the older 0.3159/0.3168 are WITHDRAWN)", fontsize=10)
+                 f"fixed {steps}-step budget, so read the SHAPE, not the height\n"
+                 "30k-step run scores 0.29409 post-tiler-fix; "
+                 "0.3159 and 0.3168 are WITHDRAWN", fontsize=9)
     ax.grid(alpha=.3); ax.legend(fontsize=9)
     plt.tight_layout(); plt.savefig(f"{FIG}/data_scaling.png", dpi=120); plt.close()
     print("  data_scaling.png")

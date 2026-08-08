@@ -1,0 +1,278 @@
+{
+  "regime": "UNet2D base 32 depth 4, 7200 steps, lr 3e-4, pos_frac 0.5, no augmentation; frozen split; threshold selected on VAL and frozen for a single TEST scoring; 3 seeds per arm. The cascade channel is the OUT-OF-FOLD classical_xf map. Arms are comparable to EACH OTHER only: the budget is 7,200 steps, not the frozen 30,000, so these are not comparable to unet2d_s30000 (0.29409).",
+  "decision_rule": "Sky, 2026-07-30: build both arms and let VALIDATION decide. Test is reported for completeness and does not select.",
+  "summary": [
+    {
+      "arm": "control",
+      "steps": 7200,
+      "n_seeds": 3,
+      "val_iou_mean": 0.40241491945167557,
+      "val_iou_sd": 0.015938365371916723,
+      "test_iou_mean": 0.2492683159839545,
+      "test_iou_sd": 0.028939577618667903,
+      "val_iou_all": [
+        0.39527022907776543,
+        0.3912989515862603,
+        0.4206755776910009
+      ],
+      "test_iou_all": [
+        0.2668964334804732,
+        0.21586897184191534,
+        0.26503954262947493
+      ]
+    },
+    {
+      "arm": "cleaned",
+      "steps": 7200,
+      "n_seeds": 3,
+      "val_iou_mean": 0.45601452016497884,
+      "val_iou_sd": 0.009787552231508994,
+      "test_iou_mean": 0.253378415516685,
+      "test_iou_sd": 0.009945801436581053,
+      "val_iou_all": [
+        0.4512023613377013,
+        0.4672765876234553,
+        0.44956461153377997
+      ],
+      "test_iou_all": [
+        0.2535710605082671,
+        0.24333769097017657,
+        0.2632264950716113
+      ]
+    },
+    {
+      "arm": "cascade",
+      "steps": 7200,
+      "n_seeds": 3,
+      "val_iou_mean": 0.4757320156768965,
+      "val_iou_sd": 0.011833957246914814,
+      "test_iou_mean": 0.24667065939453728,
+      "test_iou_sd": 0.0039561447770986085,
+      "val_iou_all": [
+        0.4648353554213186,
+        0.47403964271761545,
+        0.4883210488917553
+      ],
+      "test_iou_all": [
+        0.24210279013845035,
+        0.2489994197053589,
+        0.24890976833980255
+      ]
+    },
+    {
+      "arm": "full",
+      "steps": 7200,
+      "n_seeds": 3,
+      "val_iou_mean": 0.49862247558411515,
+      "val_iou_sd": 0.01807569704436125,
+      "test_iou_mean": 0.24757701780221716,
+      "test_iou_sd": 0.006952317278421504,
+      "val_iou_all": [
+        0.5091887175347511,
+        0.47775100248549707,
+        0.5089277067320973
+      ],
+      "test_iou_all": [
+        0.2535034743483452,
+        0.23992416799378588,
+        0.24930341106452036
+      ]
+    },
+    {
+      "arm": "full",
+      "steps": 30000,
+      "n_seeds": 1,
+      "val_iou_mean": 0.5314900954025917,
+      "val_iou_sd": NaN,
+      "test_iou_mean": 0.2612692847531937,
+      "test_iou_sd": NaN,
+      "val_iou_all": [
+        0.5314900954025917
+      ],
+      "test_iou_all": [
+        0.2612692847531937
+      ]
+    },
+    {
+      "arm": "fp_penalty",
+      "steps": 7200,
+      "n_seeds": 3,
+      "val_iou_mean": 0.3873870668133816,
+      "val_iou_sd": 0.016863114027955078,
+      "test_iou_mean": 0.20326791365034258,
+      "test_iou_sd": 0.01775690672860005,
+      "val_iou_all": [
+        0.3687524183494594,
+        0.391812865497076,
+        0.40159591659360944
+      ],
+      "test_iou_all": [
+        0.2186442314707588,
+        0.20732642977106838,
+        0.18383307970920063
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "arm": "control",
+      "seed": 0,
+      "steps": 7200,
+      "aux_ch": 0,
+      "test_iou": 0.2668964334804732,
+      "val_iou": 0.39527022907776543,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "arm": "cleaned",
+      "seed": 0,
+      "steps": 7200,
+      "aux_ch": 3,
+      "test_iou": 0.2535710605082671,
+      "val_iou": 0.4512023613377013,
+      "threshold": 0.026000000000000002,
+      "error": null
+    },
+    {
+      "arm": "cascade",
+      "seed": 0,
+      "steps": 7200,
+      "aux_ch": 1,
+      "test_iou": 0.24210279013845035,
+      "val_iou": 0.4648353554213186,
+      "threshold": 0.9500000000000001,
+      "error": null
+    },
+    {
+      "arm": "control",
+      "seed": 1,
+      "steps": 7200,
+      "aux_ch": 0,
+      "test_iou": 0.21586897184191534,
+      "val_iou": 0.3912989515862603,
+      "threshold": 0.7000000000000001,
+      "error": null
+    },
+    {
+      "arm": "cleaned",
+      "seed": 1,
+      "steps": 7200,
+      "aux_ch": 3,
+      "test_iou": 0.24333769097017657,
+      "val_iou": 0.4672765876234553,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "arm": "cascade",
+      "seed": 1,
+      "steps": 7200,
+      "aux_ch": 1,
+      "test_iou": 0.2489994197053589,
+      "val_iou": 0.47403964271761545,
+      "threshold": 0.9500000000000001,
+      "error": null
+    },
+    {
+      "arm": "control",
+      "seed": 2,
+      "steps": 7200,
+      "aux_ch": 0,
+      "test_iou": 0.26503954262947493,
+      "val_iou": 0.4206755776910009,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "arm": "cleaned",
+      "seed": 2,
+      "steps": 7200,
+      "aux_ch": 3,
+      "test_iou": 0.2632264950716113,
+      "val_iou": 0.44956461153377997,
+      "threshold": 0.5,
+      "error": null
+    },
+    {
+      "arm": "cascade",
+      "seed": 2,
+      "steps": 7200,
+      "aux_ch": 1,
+      "test_iou": 0.24890976833980255,
+      "val_iou": 0.4883210488917553,
+      "threshold": 0.35000000000000003,
+      "error": null
+    },
+    {
+      "arm": "full",
+      "seed": 0,
+      "steps": 7200,
+      "aux_ch": 4,
+      "test_iou": 0.2535034743483452,
+      "val_iou": 0.5091887175347511,
+      "threshold": 0.9000000000000001,
+      "error": null
+    },
+    {
+      "arm": "full",
+      "seed": 0,
+      "steps": 30000,
+      "aux_ch": 4,
+      "test_iou": 0.2612692847531937,
+      "val_iou": 0.5314900954025917,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "arm": "fp_penalty",
+      "seed": 0,
+      "steps": 7200,
+      "aux_ch": 0,
+      "test_iou": 0.2186442314707588,
+      "val_iou": 0.3687524183494594,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "arm": "fp_penalty",
+      "seed": 1,
+      "steps": 7200,
+      "aux_ch": 0,
+      "test_iou": 0.20732642977106838,
+      "val_iou": 0.391812865497076,
+      "threshold": 0.006,
+      "error": null
+    },
+    {
+      "arm": "fp_penalty",
+      "seed": 2,
+      "steps": 7200,
+      "aux_ch": 0,
+      "test_iou": 0.18383307970920063,
+      "val_iou": 0.40159591659360944,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "arm": "full",
+      "seed": 1,
+      "steps": 7200,
+      "aux_ch": 4,
+      "test_iou": 0.23992416799378588,
+      "val_iou": 0.47775100248549707,
+      "threshold": 0.9500000000000001,
+      "error": null
+    },
+    {
+      "arm": "full",
+      "seed": 2,
+      "steps": 7200,
+      "aux_ch": 4,
+      "test_iou": 0.24930341106452036,
+      "val_iou": 0.5089277067320973,
+      "threshold": 0.9500000000000001,
+      "error": null
+    }
+  ]
+}

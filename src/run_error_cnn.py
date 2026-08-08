@@ -7,12 +7,22 @@ cannot represent "this whole object is wrong", which is the dominant measured
 failure. This runs a U-Net over (raw, base probability) instead, and scores it
 as a prune signal against exactly the same baselines.
 
-[LEAKAGE][MUST] Val is SPLIT (contiguous, buffered): the U-Net trains on half A,
-its prune cutoff is selected on half B, and TEST is scored once with both frozen.
-The regressors it is compared against fit AND select on all of val, so this
-protocol is stricter, not looser.
+[LEAKAGE][MUST] The U-Net never grades a slice it was fitted on. Default now
+(`--cv=1`): k contiguous buffered folds inside the val slab, so every val slice
+gets an out-of-fold error map, the prune cutoff is selected on all 60 of them,
+and TEST is scored once with the all-val net and that cutoff frozen. The
+regressors it is compared against fit AND select on all of val, so this protocol
+is stricter, not looser.
+
+[WHAT CHANGED, 2026-08-06] `--cv=0` is the old path: fit on one 28-slice half,
+select the cutoff on the other 28. That run measured test IoU 0.11752 against a
+base of 0.29443 and a margin baseline of 0.30279. Cross-fitting takes each fold's
+fit set to 40-44 slices and the cutoff set to 60, which TESTS whether fit-set
+size was the binding constraint. It does not assume the answer is yes. It costs
+k + 1 fits, so roughly six times the training time at the default k = 5.
 
 Run:  python -m src.run_error_cnn [--model unet2d_s30000] [--recall 0.99]
+                                  [--cv=0]
 """
 from __future__ import annotations
 import json
@@ -30,12 +40,16 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     model = "unet2d_s30000"
     recall = 0.99
+    cv = True
+    k_folds = error_cnn.CV_FOLDS
     for a in [x for x in argv if x.startswith("--")]:
         k, _, v = a[2:].partition("=")
         if k == "model":
             model = v
         elif k == "recall":
             recall = float(v)
+        elif k == "cv":
+            cv = bool(int(v))
         else:
             raise SystemExit(f"unknown option {a}")
 
@@ -45,10 +59,19 @@ def main(argv=None):
     pv = np.load(f"results/probs/{model}_val.npy").astype(np.float32)
     pt = np.load(f"results/probs/{model}.npy").astype(np.float32)
 
-    a, b = error_cnn.split_val(pv.shape[0])
-    print(f"val split: fit on {len(a)} slices [{a[0]}-{a[-1]}], "
-          f"select cutoff on {len(b)} [{b[0]}-{b[-1]}], "
-          f"buffer {error_cnn.VAL_BUFFER}", flush=True)
+    nv = int(pv.shape[0])
+    if cv:
+        n_fit_report = nv
+        print(f"val cross-fit: {k_folds} contiguous folds over {nv} slices, "
+              f"buffer {error_cnn.VAL_BUFFER}; cutoff selected on the "
+              f"out-of-fold map of all {nv}, TEST scored with the all-val net",
+              flush=True)
+    else:
+        a, b = error_cnn.split_val(nv)
+        n_fit_report = len(a)
+        print(f"val split: fit on {len(a)} slices [{a[0]}-{a[-1]}], "
+              f"select cutoff on {len(b)} [{b[0]}-{b[-1]}], "
+              f"buffer {error_cnn.VAL_BUFFER}", flush=True)
 
     thr_ref, ref_val_iou = metrics.select_threshold(pv, Mv.astype(bool), Vv)
     thr_rec, rec_m = combine.recall_threshold(pv, Mv, Vv, recall)
@@ -56,22 +79,33 @@ def main(argv=None):
           f"recall thr {thr_rec:.3e} -> achieved {rec_m['recall']:.4f}", flush=True)
 
     t0 = time.time()
-    net = error_cnn.fit_error_unet(Rv, pv, Mv, Vv, a)
-    print(f"  trained in {time.time() - t0:.0f}s", flush=True)
+    if cv:
+        # k fold nets produce the out-of-fold error map; the (k+1)-th net is
+        # fitted on all of val and is the one applied to TEST.
+        e_sel, net, per_fold = error_cnn.fit_error_unet_cv(Rv, pv, Mv, Vv,
+                                                           k=k_folds)
+        sel = np.arange(nv)
+        print(f"  {k_folds} + 1 fits in {time.time() - t0:.0f}s", flush=True)
+    else:
+        net = error_cnn.fit_error_unet(Rv, pv, Mv, Vv, a)
+        print(f"  trained in {time.time() - t0:.0f}s", flush=True)
+        per_fold, sel = [], b
+        e_sel = error_cnn.predict_error(net, Rv[b], pv[b])
 
-    # --- select the prune cutoff on the HELD-OUT val half ---
-    eb = error_cnn.predict_error(net, Rv[b], pv[b])
-    pr = combine.fit_prune(pv[b], Mv[b], Vv[b], eb, thr_rec, higher_is_worse=True)
-    print(f"  held-out half B: unpruned {pr['unpruned_val_iou']:.4f} -> "
+    # --- select the prune cutoff on slices no fitted net has seen ---
+    pr = combine.fit_prune(pv[sel], Mv[sel], Vv[sel], e_sel, thr_rec,
+                           higher_is_worse=True)
+    lbl = f"out-of-fold, all {len(sel)} val slices" if cv else "held-out half B"
+    print(f"  {lbl}: unpruned {pr['unpruned_val_iou']:.4f} -> "
           f"pruned {pr['val_iou']:.4f}  (gain {pr['gain']:+.4f}, "
           f"cutoff {pr['cutoff']:.4g})", flush=True)
 
     # --- the SAME protocol for the free baseline, so the comparison is fair ---
     from . import confidence_bakeoff as cb
-    mscore, mhiw = cb.free_baselines(pv[b], thr_rec)["margin"]
-    pm = combine.fit_prune(pv[b], Mv[b], Vv[b], mscore, thr_rec,
+    mscore, mhiw = cb.free_baselines(pv[sel], thr_rec)["margin"]
+    pm = combine.fit_prune(pv[sel], Mv[sel], Vv[sel], mscore, thr_rec,
                            higher_is_worse=mhiw)
-    print(f"  margin baseline on the same half: pruned {pm['val_iou']:.4f} "
+    print(f"  margin baseline on the same slices: pruned {pm['val_iou']:.4f} "
           f"(gain {pm['gain']:+.4f})", flush=True)
 
     # --- TEST, once, both frozen ---
@@ -86,7 +120,12 @@ def main(argv=None):
         return {k: float(v) for k, v in m.items() if isinstance(v, (int, float))}
 
     res = {"model": model, "recall_target": recall,
-           "val_fit_slices": len(a), "val_cutoff_slices": len(b),
+           "mode": "cv" if cv else "split",
+           "k": k_folds if cv else None,
+           "n_val_slices": nv,
+           "fit_slices_per_fold": [f["n_fit"] for f in per_fold],
+           "per_fold": per_fold,
+           "val_fit_slices": n_fit_report, "val_cutoff_slices": len(sel),
            "base_val_iou": float(ref_val_iou),
            "error_cnn_heldout_val_iou": float(pr["val_iou"]),
            "error_cnn_heldout_gain": float(pr["gain"]),
@@ -106,11 +145,17 @@ def main(argv=None):
               f"{m['precision']:9.4f}{m['recall']:9.4f}")
     dv = res["test_error_cnn"]["iou"] - res["test_base"]["iou"]
     dm = res["test_error_cnn"]["iou"] - res["test_margin"]["iou"]
+    # [CORRECTED 2026-08-04] The 0.0142 floor hardcoded in the two gates below is
+    # anchored on `pipeline_v2.SE_REF_N = 19`, which is the val zone's BINARY
+    # connected-components count, not a chondrule count. The same-id rule gives
+    # 36 there (`src/recount_chondrules.py`), and neither count was the
+    # resampling unit, because the `SE_REF_IOU = 0.0071` it pairs with was
+    # bootstrapped over 60 validation SLICES. The 0.0142 floor is unchanged.
     print(f"\n  error U-Net vs base   : {dv:+.4f}   "
           f"({'below' if abs(dv) < 0.0142 else 'above'} the 0.0142 floor)")
     print(f"  error U-Net vs margin : {dm:+.4f}   "
           f"({'below' if abs(dm) < 0.0142 else 'above'} the 0.0142 floor)")
-    print(f"  beat margin on the held-out val half: "
+    print(f"  beat margin on {lbl}: "
           f"{res['beats_margin_on_heldout_val']}")
     print(f"\nwrote {OUT}")
     return res

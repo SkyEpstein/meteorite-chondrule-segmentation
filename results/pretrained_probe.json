@@ -1,0 +1,47 @@
+{
+  "regime": "ResNet-18 encoder + U-Net decoder; the arms differ ONLY in encoder initialisation (ImageNet vs random). Frozen split, threshold on VAL, TEST scored once per arm. N=1 meteorite, n=1 seed per arm.",
+  "rows": [
+    {
+      "model": "resunet18_pretrained_s30000",
+      "tier": "C_cnn",
+      "iou": 0.3026876354410662,
+      "dice": 0.4647125330833154,
+      "precision": 0.3393860118554004,
+      "recall": 0.7367901922967404,
+      "tp": 4334032,
+      "fp": 8436182,
+      "fn": 1548283,
+      "auprc": 0.4670532528415621,
+      "ece": 0.07361185604207,
+      "threshold": 0.018000000000000002,
+      "per_slice_iou_median": 0.28479842707868586,
+      "sec": 8150.2,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "arm": "pretrained",
+      "encoder": "resnet18",
+      "pretrained": true,
+      "val_iou": 0.5281622616908856
+    },
+    {
+      "model": "resunet18_scratch_s30000",
+      "tier": "C_cnn",
+      "iou": 0.33568544332220573,
+      "dice": 0.5026414639771271,
+      "precision": 0.40761411676048936,
+      "recall": 0.6554460276268782,
+      "tp": 3855540,
+      "fp": 5603259,
+      "fn": 2026775,
+      "auprc": 0.4430054975145873,
+      "ece": 0.06331878046653179,
+      "threshold": 0.002,
+      "per_slice_iou_median": 0.32066011265001904,
+      "sec": 5188.7,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "arm": "scratch",
+      "encoder": "resnet18",
+      "pretrained": false,
+      "val_iou": 0.495689186031029
+    }
+  ]
+}

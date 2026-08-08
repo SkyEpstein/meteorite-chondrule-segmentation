@@ -2,6 +2,28 @@
   "regime": "leakage-free contiguous z-slab split; threshold selected on VAL, frozen for a single TEST scoring; foreground=chondrule; N=1 meteorite (ALH 83010); local Mac (MPS/CPU), compute-limited",
   "leaderboard": [
     {
+      "model": "resunet18_scratch_s30000",
+      "tier": "C_cnn",
+      "iou": 0.33568544332220573,
+      "dice": 0.5026414639771271,
+      "precision": 0.40761411676048936,
+      "recall": 0.6554460276268782,
+      "tp": 3855540,
+      "fp": 5603259,
+      "fn": 2026775,
+      "auprc": 0.4430054975145873,
+      "ece": 0.06331878046653179,
+      "threshold": 0.002,
+      "per_slice_iou_median": 0.32066011265001904,
+      "sec": 5184.9,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "arm": "scratch",
+      "encoder": "resnet18",
+      "pretrained": false,
+      "tiler_regime": "post",
+      "stamp_note": "regime set by hand; run predates the scoring stamp"
+    },
+    {
       "model": "unet2d_s15000",
       "tier": "C_cnn",
       "iou": 0.3088595028032994,
@@ -16,7 +38,29 @@
       "threshold": 0.002,
       "per_slice_iou_median": 0.30508521525429527,
       "sec": 17292.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
+    },
+    {
+      "model": "resunet18_pretrained_s30000",
+      "tier": "C_cnn",
+      "iou": 0.3026876354410662,
+      "dice": 0.4647125330833154,
+      "precision": 0.3393860118554004,
+      "recall": 0.7367901922967404,
+      "tp": 4334032,
+      "fp": 8436182,
+      "fn": 1548283,
+      "auprc": 0.4670532528415621,
+      "ece": 0.07361185604207,
+      "threshold": 0.018000000000000002,
+      "per_slice_iou_median": 0.28479842707868586,
+      "sec": 8148.1,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "arm": "pretrained",
+      "encoder": "resnet18",
+      "pretrained": true,
+      "tiler_regime": "post"
     },
     {
       "model": "unet2d_s30000",
@@ -33,7 +77,8 @@
       "threshold": 0.002,
       "per_slice_iou_median": 0.28722989175586877,
       "sec": 5195.1,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "post"
     },
     {
       "model": "long_p1_ctrl_b32",
@@ -59,7 +104,8 @@
         "pos_frac": 0.5,
         "name": "p1_ctrl_b32"
       },
-      "steps": 7200
+      "steps": 7200,
+      "tiler_regime": "pre"
     },
     {
       "model": "hrnet_lite",
@@ -76,7 +122,8 @@
       "threshold": 0.2,
       "per_slice_iou_median": 0.24372810969157882,
       "sec": 694.7,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "swin_lite",
@@ -93,7 +140,8 @@
       "threshold": 0.55,
       "per_slice_iou_median": 0.23350552958151752,
       "sec": 345.1,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "unet25d_k5",
@@ -110,7 +158,8 @@
       "threshold": 0.25,
       "per_slice_iou_median": 0.2236067718368217,
       "sec": 1016.4,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "unet25d_k5_s15000",
@@ -127,7 +176,8 @@
       "threshold": 0.006,
       "per_slice_iou_median": 0.23446174699273115,
       "sec": 5377.5,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "tiramisu",
@@ -144,7 +194,8 @@
       "threshold": 0.5,
       "per_slice_iou_median": 0.23703043336564972,
       "sec": 1846.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "unet2d_s30000_auggeom",
@@ -161,7 +212,8 @@
       "threshold": 0.002,
       "per_slice_iou_median": 0.20345392162797443,
       "sec": 5312.9,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "post"
     },
     {
       "model": "resunet",
@@ -178,7 +230,8 @@
       "threshold": 0.25,
       "per_slice_iou_median": 0.23427254841495546,
       "sec": 1753.6,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "long_p1_geom_b32",
@@ -204,7 +257,8 @@
         "pos_frac": 0.5,
         "name": "p1_geom_b32"
       },
-      "steps": 7200
+      "steps": 7200,
+      "tiler_regime": "pre"
     },
     {
       "model": "unet2d",
@@ -221,7 +275,8 @@
       "threshold": 0.25,
       "per_slice_iou_median": 0.23932082761232856,
       "sec": 871.3,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "rt_dice_ctrl",
@@ -237,7 +292,8 @@
       "ece": 0.07062989986665108,
       "threshold": 0.25,
       "per_slice_iou_median": 0.23932082761232856,
-      "sec": 947.1
+      "sec": 947.1,
+      "tiler_regime": "pre"
     },
     {
       "model": "autoencoder",
@@ -254,7 +310,8 @@
       "threshold": 0.45,
       "per_slice_iou_median": 0.21432480660922182,
       "sec": 185.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "unet_crf",
@@ -271,7 +328,8 @@
       "threshold": 0.45,
       "per_slice_iou_median": 0.21840930883852214,
       "sec": 980.4,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "axial_unet",
@@ -288,7 +346,8 @@
       "threshold": 0.018000000000000002,
       "per_slice_iou_median": 0.20644288690082435,
       "sec": 509.5,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "deeplabv3p",
@@ -305,7 +364,8 @@
       "threshold": 0.15000000000000002,
       "per_slice_iou_median": 0.2209384624208322,
       "sec": 318.3,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "convlstm",
@@ -322,7 +382,8 @@
       "threshold": 0.5,
       "per_slice_iou_median": 0.2042543274537491,
       "sec": 919.6,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "segnext_lite",
@@ -339,7 +400,8 @@
       "threshold": 0.25,
       "per_slice_iou_median": 0.1897042853771224,
       "sec": 1188.2,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "rt_dice_dilate1",
@@ -355,7 +417,8 @@
       "ece": 0.07927972141406395,
       "threshold": 0.25,
       "per_slice_iou_median": 0.2017921143799503,
-      "sec": 1000.3
+      "sec": 1000.3,
+      "tiler_regime": "pre"
     },
     {
       "model": "dilated_cnn",
@@ -372,7 +435,8 @@
       "threshold": 0.45,
       "per_slice_iou_median": 0.19322371281886347,
       "sec": 929.3,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "attention_unet",
@@ -389,7 +453,8 @@
       "threshold": 0.3,
       "per_slice_iou_median": 0.20162761712558147,
       "sec": 1061.0,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "fcn8",
@@ -406,7 +471,8 @@
       "threshold": 0.25,
       "per_slice_iou_median": 0.186474755786847,
       "sec": 491.7,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "patch_cnn",
@@ -423,7 +489,8 @@
       "threshold": 0.45,
       "per_slice_iou_median": 0.2075567136905599,
       "sec": 596.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "unet25d_k5_s30000",
@@ -440,7 +507,8 @@
       "threshold": 0.45,
       "per_slice_iou_median": 0.19606408247298485,
       "sec": 4465.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "unetpp",
@@ -457,7 +525,8 @@
       "threshold": 0.3,
       "per_slice_iou_median": 0.18175201358490406,
       "sec": 720.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "cascade_gnn_cnn",
@@ -473,7 +542,8 @@
       "ece": 0.024211178825974348,
       "threshold": 0.03,
       "per_slice_iou_median": 0.19385026852765344,
-      "sec": 890.6
+      "sec": 890.6,
+      "tiler_regime": "pre"
     },
     {
       "model": "vit_seg",
@@ -490,7 +560,8 @@
       "threshold": 0.25,
       "per_slice_iou_median": 0.20117982122478453,
       "sec": 288.6,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "gnn_resgcn",
@@ -507,7 +578,8 @@
       "threshold": 0.55,
       "per_slice_iou_median": 0.210460253627836,
       "sec": 726.2,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "segnet",
@@ -524,7 +596,8 @@
       "threshold": 0.3,
       "per_slice_iou_median": 0.16933704821881462,
       "sec": 1003.7,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "gnn_graph_unet",
@@ -547,7 +620,8 @@
         "iou": 0.15019855673604812
       },
       "sec": 467.3,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "gnn_chebnet",
@@ -570,7 +644,8 @@
         "iou": 0.1581858361279423
       },
       "sec": 2322.0,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "gnn_graphsage",
@@ -587,7 +662,8 @@
       "threshold": 0.2,
       "per_slice_iou_median": 0.18898600866977694,
       "sec": 552.2,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "superpixel_gcn",
@@ -604,7 +680,8 @@
       "threshold": 0.2,
       "per_slice_iou_median": 0.17833663628777247,
       "sec": 364.9,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "rt_focal_tversky",
@@ -626,7 +703,8 @@
         "precision": 0.1438965910005158,
         "iou": 0.14159462192629327
       },
-      "sec": 751.9
+      "sec": 751.9,
+      "tiler_regime": "pre"
     },
     {
       "model": "gnn_gin",
@@ -649,7 +727,8 @@
         "iou": 0.1567877784240547
       },
       "sec": 12174.8,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "pixel_mlp",
@@ -666,7 +745,8 @@
       "threshold": 0.5,
       "per_slice_iou_median": 0.14257350566777188,
       "sec": 421.9,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "rt_tversky_recall",
@@ -688,7 +768,8 @@
         "precision": 0.14929254596227268,
         "iou": 0.1470706704945304
       },
-      "sec": 983.5
+      "sec": 983.5,
+      "tiler_regime": "pre"
     },
     {
       "model": "convnext_unet",
@@ -711,7 +792,8 @@
         "iou": 0.1332924605545261
       },
       "sec": 1347.0,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "siren_seg",
@@ -728,7 +810,8 @@
       "threshold": 0.45,
       "per_slice_iou_median": 0.11728512823278486,
       "sec": 617.0,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "pre"
     },
     {
       "model": "gnn_gat",
@@ -751,7 +834,8 @@
         "iou": 0.052785267105351384
       },
       "sec": 808.4,
-      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)"
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "tiler_regime": "n/a"
     },
     {
       "model": "matrix_specialist",
@@ -773,7 +857,8 @@
         "precision": 0.052785267105351384,
         "iou": 0.052785267105351384
       },
-      "sec": 832.4
+      "sec": 832.4,
+      "tiler_regime": "pre"
     }
   ]
 }

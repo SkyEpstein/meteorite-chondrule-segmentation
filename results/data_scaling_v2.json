@@ -1,0 +1,51 @@
+{
+  "regime": "TRAIN subsets drawn at RANDOM across the full train slab; fixed 7200-step budget for every point so compute is held constant; val/test slabs identical and untouched across runs; 3 seeds per fraction; foreground IoU on TEST, threshold selected on VAL. N=1 meteorite (ALH 83010).",
+  "caveat": "Absolute IoU is depressed by the fixed 7200-step budget (the 30,000-step run of the same model scores 0.29409 post-tiler-fix; the 0.3159/0.3168 anchors are WITHDRAWN). Read the SHAPE of the curve, not its height.",
+  "supersedes": "results/data_scaling.json (contiguous subsets, 1 seed)",
+  "summary": [
+    {
+      "frac": 0.25,
+      "n_slices": 53,
+      "n_seeds": 3,
+      "test_iou_mean": 0.2727426958445988,
+      "test_iou_sd": 0.008410578830009023,
+      "test_iou_all": [
+        0.2822714641738245,
+        0.2663535757470556,
+        0.2696030476129163
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "frac": 0.25,
+      "seed": 0,
+      "n_slices": 53,
+      "steps": 7200,
+      "test_iou": 0.2822714641738245,
+      "val_iou": 0.4395850322107855,
+      "threshold": 0.002,
+      "error": null
+    },
+    {
+      "frac": 0.25,
+      "seed": 1,
+      "n_slices": 53,
+      "steps": 7200,
+      "test_iou": 0.2663535757470556,
+      "val_iou": 0.389748290134429,
+      "threshold": 0.8,
+      "error": null
+    },
+    {
+      "frac": 0.25,
+      "seed": 2,
+      "n_slices": 53,
+      "steps": 7200,
+      "test_iou": 0.2696030476129163,
+      "val_iou": 0.42627830340612255,
+      "threshold": 0.002,
+      "error": null
+    }
+  ]
+}

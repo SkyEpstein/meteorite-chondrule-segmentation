@@ -1,0 +1,51 @@
+{
+  "regime": "constitution stage 7: the three error signals stacked by a logistic model cross-fit inside val on contiguous buffered folds, then ONE prune. Cutoff selected on the out-of-fold stacked score over all val slices; test scored once. Signals are all oriented so higher means more likely wrong.",
+  "caveat": "Previous measurements established only that no SINGLE signal beats the free margin baseline. This tests the combination. The val slab is 60 slices holding 19 chondrules by binary CC or 36 by the same-id rule, so a favourable val result is not evidence of transfer.",
+  "model": "unet2d_s30000",
+  "target_recall": 0.95,
+  "achieved_recall": 0.9575877346236594,
+  "k": 5,
+  "thr_recall": 9.77932768542928e-07,
+  "signals": [
+    "regressor",
+    "error_unet",
+    "z_agreement"
+  ],
+  "unpruned": {
+    "val": 0.07107118924956299,
+    "test": 0.06026477207950718
+  },
+  "arms": {
+    "stacked": {
+      "val": 0.44731139079700394,
+      "test": 0.28660876369040983,
+      "cutoff": 0.0860418698284775,
+      "coefficients": {
+        "regressor": 7.9934327704190125,
+        "error_unet": 1.103576239768074,
+        "z_agreement": 0.7511214551073142
+      },
+      "intercept": -5.209987952221455
+    },
+    "regressor": {
+      "val": 0.45874100741713814,
+      "cutoff": 0.29166694482167566,
+      "test": 0.2931586650814662
+    },
+    "error_unet": {
+      "val": 0.10560508689824338,
+      "cutoff": 0.013339780271053314,
+      "test": 0.06968896478689299
+    },
+    "z_agreement": {
+      "val": 0.08018466216419286,
+      "cutoff": 0.0,
+      "test": 0.07133839577988962
+    },
+    "margin": {
+      "val": 0.43807083994230245,
+      "cutoff": -0.5,
+      "test": 0.30278824149718325
+    }
+  }
+}

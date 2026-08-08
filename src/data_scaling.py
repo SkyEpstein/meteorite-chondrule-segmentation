@@ -39,11 +39,14 @@ its height, and do not compare its heights against pre-fix numbers.
 The subsets are drawn from TRAIN only. Val and test are untouched and identical
 across every run, so the scores stay comparable. [LEAKAGE][MUST]
 
-Run:  python -m src.data_scaling
+Run:  python -m src.data_scaling                       (the whole 12-run grid)
+      python -m src.data_scaling --frac=0.25           (one fraction, 3 seeds)
+      python -m src.data_scaling --frac=0.25 --seed=2  (one run)
 """
 from __future__ import annotations
 import json
 import os
+import sys
 import numpy as np
 
 from . import evaluate
@@ -111,14 +114,14 @@ def save(runs, path=OUT):
     return summary
 
 
-def run(root="."):
+def run(root=".", fracs=None, seeds=None):
     d = evaluate.load(root)
     runs = load_done()
     done = {(r["frac"], r["seed"]) for r in runs}
     print(f"train slices available: {d['train']['raw'].shape[0]}", flush=True)
 
-    for frac in FRACTIONS:
-        for seed in SEEDS:
+    for frac in (fracs or FRACTIONS):
+        for seed in (seeds or SEEDS):
             if (frac, seed) in done:
                 print(f"skip frac={frac} seed={seed} (already done)", flush=True)
                 continue
@@ -174,5 +177,33 @@ def run(root="."):
     return summary
 
 
+def main(argv=None):
+    """Run a slice of the grid rather than all of it.
+
+    The full grid is 12 runs and it has been abandoned three times, leaving 1
+    completed run behind. Finishing ONE fraction is worth more than a fourth
+    all-or-nothing attempt, because `run` already reports the per-fraction seed
+    SD and that SD is the number every noise-floor claim in this project
+    currently assumes without having measured it.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    fracs = seeds = None
+    for a in [x for x in argv if x.startswith("--")]:
+        k, _, v = a[2:].partition("=")
+        if k == "frac":
+            fracs = tuple(float(x) for x in v.split(","))
+        elif k == "seed":
+            seeds = tuple(int(x) for x in v.split(","))
+        else:
+            raise SystemExit(f"unknown option {a}")
+    for f in fracs or ():
+        if f not in FRACTIONS:
+            raise SystemExit(f"--frac={f} is not one of {FRACTIONS}")
+    for s in seeds or ():
+        if s not in SEEDS:
+            raise SystemExit(f"--seed={s} is not one of {SEEDS}")
+    return run(fracs=fracs, seeds=seeds)
+
+
 if __name__ == "__main__":
-    run()
+    main()

@@ -1,0 +1,48 @@
+{
+  "regime": "per-zone 3D chondrule counts on the FROZEN split; zone membership from split.json zone_stats[zone]['abs_slices']; valid mask from the training cache so straddler-ignored voxels are excluded; counted BOTH ways over identical voxels",
+  "same_id_rule": "pipeline_v2.count_chondrules_3d, groups voxels by stored instance id",
+  "binary_cc_rule": "scipy.ndimage.label on (ids > 0) & valid, merges touching chondrules",
+  "zones": {
+    "train": {
+      "n_slices": 213,
+      "same_id_3d": 63,
+      "binary_cc_3d": 49,
+      "shortfall_pct": 22.2
+    },
+    "val": {
+      "n_slices": 60,
+      "same_id_3d": 36,
+      "binary_cc_3d": 19,
+      "shortfall_pct": 47.2
+    },
+    "test": {
+      "n_slices": 80,
+      "same_id_3d": 43,
+      "binary_cc_3d": 24,
+      "shortfall_pct": 44.2
+    }
+  },
+  "total_same_id": 142,
+  "total_binary_cc": 92,
+  "split_json_n_chondrule_instances": 142,
+  "se_ref_n_in_code": 19,
+  "val_same_id": 36,
+  "val_binary_cc": 19,
+  "claims_on_record": {
+    "CHANGELOG 99/19/24": [
+      99,
+      19,
+      24
+    ],
+    "handoff 63/36/43": [
+      63,
+      36,
+      43
+    ],
+    "v2 split 81/32/29 (DIFFERENT split)": [
+      81,
+      32,
+      29
+    ]
+  }
+}

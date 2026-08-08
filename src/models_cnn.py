@@ -345,9 +345,10 @@ class PatchSet(Dataset):
     any center yields a full patch. For 2.5D (k>1) the input channels are the k
     adjacent slices at the SAME patch location (z-ends replicate-padded).
 
-    `aux` is an optional (n,H,W) float32 volume aligned with `R` (e.g. a coarse
-    GNN map for the cascade): when given it is appended as an EXTRA input
-    channel after the k raw channels, so the input becomes (k+1, P, P).
+    `aux` is an optional (n,H,W) or (n,C,H,W) float32 volume aligned with `R`
+    (e.g. a coarse GNN map for the cascade): when given it is appended as C
+    EXTRA input channels after the k raw channels, so the input becomes
+    (k+C, P, P).
     """
 
     def __init__(self, R, M, V, patch=128, pos_frac=0.5, length=2000, seed=0,
@@ -386,8 +387,17 @@ class PatchSet(Dataset):
         self.Mp = np.pad(M_t, pad, mode="reflect")
         self.Vp = np.pad(V, pad, mode="reflect")
         # Auxiliary channel volume, padded exactly like R so it stays aligned.
-        self.Auxp = (None if aux is None else
-                     np.pad(np.asarray(aux, np.float32), pad, mode="reflect"))
+        # A (n,H,W) aux is promoted to (n,1,H,W) so one channel and many take
+        # the identical path; the padded values are unchanged either way.
+        self.Auxp = None
+        if aux is not None:
+            a = np.asarray(aux, np.float32)
+            if a.ndim == 3:
+                a = a[:, None]
+            if a.ndim != 4:
+                raise ValueError(f"aux must be (n,H,W) or (n,C,H,W); got {a.shape}")
+            self.Auxp = np.pad(a, ((0, 0), (0, 0), (half, half), (half, half)),
+                               mode="reflect")
         # Precompute valid-positive coordinates per slice (original, unpadded).
         self.pos_slices, self.pos_coords = [], {}
         for i in range(self.n):
@@ -449,7 +459,7 @@ class PatchSet(Dataset):
         tgt = self.Mp[i, y:y + p, x:x + p][None].astype(np.float32)
         val = self.Vp[i, y:y + p, x:x + p][None].astype(np.float32)
         aux = (None if self.Auxp is None else
-               self.Auxp[i, y:y + p, x:x + p][None].astype(np.float32))
+               self.Auxp[i, :, y:y + p, x:x + p].astype(np.float32))
 
         if self.augment:
             # augment="geom" -> flips/rotations only; True/"full" -> also
@@ -487,7 +497,7 @@ class PatchSet(Dataset):
         inp = np.ascontiguousarray(inp, dtype=np.float32)
         tgt = np.ascontiguousarray(tgt, dtype=np.float32)
         val = np.ascontiguousarray(val, dtype=np.float32)
-        return (torch.from_numpy(inp),      # (k [+1 aux], P, P)
+        return (torch.from_numpy(inp),      # (k [+C aux], P, P)
                 torch.from_numpy(tgt),      # (1, P, P)
                 torch.from_numpy(val))      # (1, P, P)
 
@@ -535,16 +545,18 @@ class CNNRunner:
     `make_model(in_ch)` builds the net; `loss_fn(logits, target, valid)` is the
     masked loss.  `.tier` = "C_cnn"; `.name` identifies the run.
 
-    `aux_lookup` is an optional callable `slice2d -> (H,W) float32 aux map`. When
-    set, the aux map of every slice is fed to the net as one EXTRA input channel
-    (so `in_ch = k + 1`), both while training and at inference.
+    `aux_lookup` is an optional callable returning a (H,W) or (C,H,W) float32
+    aux map for one slice. When set, the aux map of every slice is fed to the
+    net as C EXTRA input channels (so `in_ch = k + C`), both while training and
+    at inference. `aux_ch` declares C; it defaults to 1, the historical
+    behaviour, and a (H,W) return is promoted to (1,H,W).
     """
 
     def __init__(self, name, make_model, loss_fn, k=1, epochs=15,
                  steps_per_epoch=200, batch=16, patch=128, pos_frac=0.5,
                  lr=1e-3, pos_weight=None, seed=0, val_stride=4,
                  weight_decay=0.0, augment=False, dilate_target=0,
-                 aux_lookup=None, invert_target=False, hard_frac=0.0,
+                 aux_lookup=None, aux_ch=1, invert_target=False, hard_frac=0.0,
                  ckpt_dir=None):
         self.name = name
         self.tier = "C_cnn"
@@ -565,6 +577,7 @@ class CNNRunner:
         self.hard_frac = hard_frac           # fraction of patches on confusable matrix
         self.pos_weight = pos_weight
         self.aux_lookup = aux_lookup
+        self.aux_ch = int(aux_ch)
         self.seed = seed
         # Weights were previously kept in memory only, so every trained model
         # died with its process. Applying a model to a NEW meteorite (or to the
@@ -583,7 +596,7 @@ class CNNRunner:
         No test set is passed or referenced anywhere in this method.
         """
         torch.manual_seed(self.seed)
-        in_ch = self.k + (1 if self.aux_lookup is not None else 0)
+        in_ch = self.k + (self.aux_ch if self.aux_lookup is not None else 0)
         self.model = self.make_model(in_ch).to(DEVICE)
         opt = torch.optim.Adam(self.model.parameters(), lr=self.lr,
                                weight_decay=self.weight_decay)
@@ -591,10 +604,7 @@ class CNNRunner:
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.epochs)
 
         # --- TRAIN-ONLY data: patches sampled strictly from `train`. ---
-        aux = None
-        if self.aux_lookup is not None:
-            aux = np.stack([np.asarray(self.aux_lookup(train["raw"][i]), np.float32)
-                            for i in range(train["raw"].shape[0])])
+        aux = None if self.aux_lookup is None else self._aux_volume(train["raw"])
         ds = PatchSet(train["raw"], train["mask"], train["valid"],
                       patch=self.patch, pos_frac=self.pos_frac,
                       length=self.steps_per_epoch * self.batch,
@@ -690,8 +700,9 @@ class CNNRunner:
             # an arbitrary operating point. [LEAKAGE][MUST]
             "best_thr": float(self.best_thr),
             "val_iou": float(self.best_full_val_iou),
-            "in_ch": self.k + (1 if self.aux_lookup is not None else 0),
+            "in_ch": self.k + (self.aux_ch if self.aux_lookup is not None else 0),
             "has_aux": self.aux_lookup is not None,
+            "aux_ch": self.aux_ch,
             "config": {c: getattr(self, c) for c in self.CKPT_CFG},
         }, path)
         print(f"    [{self.name}] checkpoint -> {path}", flush=True)
@@ -700,11 +711,11 @@ class CNNRunner:
     def load_checkpoint(self, path, strict_config=True):
         """Restore weights + threshold. Rebuilds the net; no fit() required."""
         ck = torch.load(path, map_location="cpu", weights_only=False)
-        in_ch = self.k + (1 if self.aux_lookup is not None else 0)
+        in_ch = self.k + (self.aux_ch if self.aux_lookup is not None else 0)
         if in_ch != ck["in_ch"]:
             raise ValueError(
                 f"input channels differ: runner={in_ch} checkpoint={ck['in_ch']}"
-                " — k and aux_lookup must match how it was trained")
+                ": k, aux_lookup and aux_ch must match how it was trained")
         if strict_config:
             bad = {c: (getattr(self, c), ck["config"][c]) for c in self.CKPT_CFG
                    if c in ck["config"] and getattr(self, c) != ck["config"][c]}
@@ -727,13 +738,30 @@ class CNNRunner:
               flush=True)
         return self
 
+    def _aux_volume(self, raw):
+        """(n,H,W) raw -> (n,C,H,W) float32 aux channels. [shared by both paths]
+
+        `aux_lookup` may return (H,W) for a single channel or (C,H,W) for N. The
+        single-channel return is promoted so the rest of the path is shape-agnostic
+        and the one-channel tensor stays bit-identical to what it was.
+        """
+        a = np.stack([np.asarray(self.aux_lookup(raw[i]), np.float32)
+                      for i in range(raw.shape[0])])
+        if a.ndim == 3:                      # (n,H,W): one channel, historical shape
+            a = a[:, None]
+        if a.ndim != 4:
+            raise ValueError(f"aux_lookup must return (H,W) or (C,H,W); "
+                             f"stacked shape was {a.shape}")
+        if a.shape[1] != self.aux_ch:
+            raise ValueError(f"aux_lookup returned {a.shape[1]} channel(s) but "
+                             f"aux_ch={self.aux_ch} was declared")
+        return a
+
     def _channels(self, raw):
         """(n,H,W) raw -> (n,C,H,W) float32 network input. [shared by both paths]"""
         vol = stack_adjacent(normalize(raw), self.k)   # (n,k,H,W), fixed scale
-        if self.aux_lookup is not None:                # extra channel -> (n,k+1,H,W)
-            aux = np.stack([np.asarray(self.aux_lookup(raw[i]), np.float32)
-                            for i in range(raw.shape[0])])
-            vol = np.concatenate([vol, aux[:, None]], axis=1)
+        if self.aux_lookup is not None:                # extra channels -> (n,k+C,H,W)
+            vol = np.concatenate([vol, self._aux_volume(raw)], axis=1)
         return vol
 
     def predict_proba_whole(self, raw):

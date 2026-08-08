@@ -27,6 +27,14 @@ ensemble); a **learned confidence model** trained on the CV models' own mistakes
 **cross-slice z-consistency** confidence/refinement; a spatial hold-out
 evaluation; and application to the unlabeled slices of this scan.
 
+**[AMENDED 2026-08-04] "one meteorite" now describes the dataset, not the
+ingestion path.** Multi-meteorite ingestion shipped: `build_multi_split` accepts
+several `MeteoriteSource` entries, pads them to a common in-plane size with the
+padding marked invalid, and records each source's `voxel_um`
+(`tests/test_multi_meteorite.py` covers this). `run_all` with two sources has
+still never completed end to end. Only §12 was amended when this landed; this
+Scope paragraph was missed.
+
 **Out of scope (for now):** instance separation of individual chondrules;
 mineral-species classification (the labels do not encode species); any
 cross-meteorite generalization claim; and any model that cannot run on the local
@@ -153,7 +161,13 @@ environment, fixed seeds, split saved to disk.
    requires**; a bare IoU does not satisfy this clause. **Every stage must be
    ablatable** so a stage that does not earn its place is visible rather than
    assumed. This is an **architecture contract, not a performance claim**: at
-   today's data volume (MDE 0.0142 IoU at n=19 val chondrules) the stages are
+   today's data volume (MDE 0.0142 IoU at n=19 val chondrules. **[CORRECTED
+   2026-08-04]** 19 is the val zone's BINARY connected-components count, not the
+   chondrule count that label implies; the pipeline's own same-id rule gives 36
+   over identical voxels, measured by `src/recount_chondrules.py`. `SE_REF_N` was
+   left at 19 deliberately, because the SE it pairs with, `SE_REF_IOU = 0.0071`,
+   was bootstrapped over 60 validation SLICES, so neither count was ever the
+   resampling unit) the stages are
    individually indistinguishable from break-even — the hierarchy measured
    −0.012, *inside* that floor, and is justified on **compute** (2.41× at target
    recall 0.999), not accuracy. **[REGIME] Those two figures, and every
@@ -175,7 +189,11 @@ environment, fixed seeds, split saved to disk.
    (achieved 0.9355, flagged unreachable), which is a comparability defect in any
    bake-off across those two arms. No stage may
    hard-code ALH 83010; the entry point stays `run_all(sources)` over
-   `MeteoriteSource` so more meteorites are an argument, not a code change.
+   `MeteoriteSource`. **[CORRECTED 2026-08-04] The claim that more meteorites are
+   therefore "an argument, not a code change" was FALSE.** `pipeline_v2.py`
+   crashed on two scans of different in-plane size, so the ingestion path itself
+   needed a fix (pad to the common in-plane size, with the padding marked
+   invalid). `run_all` with two sources has still never completed end to end.
    Full spec: [`specs/2026-07-29-complete-model-contract/spec.md`](../specs/2026-07-29-complete-model-contract/spec.md).
 
 ## Roadmap

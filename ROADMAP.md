@@ -7,9 +7,78 @@ Governed by [memory/constitution.md](memory/constitution.md) ·
 results in [CHANGELOG.md](CHANGELOG.md) ·
 specs in [specs/2026-07-23-chondrule-segmentation/](specs/2026-07-23-chondrule-segmentation/)
 
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-04
 
 > ⚠️ **Read the KNOWN ISSUES block at the top of [CHANGELOG.md](CHANGELOG.md) before quoting any number here.** Several results in this file are withdrawn or non-reproducing.
+
+---
+
+## 2026-08-04: the pretraining probe is NULL, and the first measured seed variance
+
+**The pretraining probe is COMPLETE and its verdict is NULL.** The pretrained
+ResNet18-UNet scored test IoU 0.30269 against the scratch control's 0.33569, a
+gap of -0.03300. The band registered before the numbers arrived says a gap under
+about 0.05 is ambiguous at n=1 seed, so this is not evidence either way, and it
+is not being reinterpreted now that it has a direction. The sign is opposite to
+"pretraining substitutes for data". This is the ninth val/test sign flip:
+pretrained won validation by +0.0325 and lost test by -0.0330. [UNVERIFIED] The
+scratch arm's val-frozen threshold is 0.002, the documented grid floor, so do not
+treat -0.033 as clean until that is settled.
+
+**Second reading, the architecture one.** Scratch ResNet18-UNet (0.33569) beats
+plain `unet2d_s30000` (0.29409) by +0.0416. Also n=1 seed, also inside the
+ambiguity band. [CORRECTED 2026-08-04] It does not isolate architecture:
+`resunet18_*` is BatchNorm throughout (torchvision ResNet-18 encoder plus an
+`nn.BatchNorm2d` decoder) while `unet2d_s30000` uses GroupNorm
+(`models_cnn._norm`), so this comparison crosses a normalisation change too.
+
+**First measured seed variance in this project: SD 0.0084.** Fraction 0.25 of
+train at the 7,200-step budget, three seeds, test IoU 0.2823 / 0.2664 / 0.2696.
+The data-scaling curve now stands at 3 of 12.
+
+**Validation predicts test across models, and is still too coarse to use here.**
+Over 39 leaderboard models r = +0.898, but the bar a val gap must clear to mean
+anything is 0.137 to 0.172 IoU, while the competitive field spans only 0.2564 in
+validation IoU. This dataset separates about two tiers of model and nothing
+finer.
+
+**SE_REF_N left at 19, and the recount settled what 19 is.** The proposed
+correction to 36 had the sign backwards: the anchor is a matched pair, so raising
+the count LOOSENS every floor by sqrt(36/19) = 1.376. The 0.0103 figure is
+WITHDRAWN. `python -m src.recount_chondrules` then measured the frozen split both
+ways over identical voxels:
+
+| zone | slices | same-id 3D | binary CC |
+|---|---|---|---|
+| train | 213 | 63 | 49 |
+| val | 60 | **36** | **19** |
+| test | 80 | 43 | 24 |
+| total | | **142** | 92 |
+
+So `SE_REF_N = 19` is exactly the binary connected-components count of the val
+zone, the undercount `count_chondrules_3d` was written to avoid. The handoff's
+63/36/43 is confirmed; the 99/19/24 in CHANGELOG.md's 2026-07-29 "Prepare for a
+second meteorite" entry, under "Free statistical power from slab placement", is
+not reproduced. The constant is STILL not changed to 36, because `SE_REF_IOU`
+was bootstrapped over 60 val SLICES, so neither 19 nor 36 was ever the
+resampling unit.
+
+**The 2.0 versus 2.8 multiplier is traced.** Only one of three mentions carries a
+derivation (`specs/2026-07-29-complete-model-contract/spec.md:206-208`), which
+gives 2.8 as (1.96 + 0.84), the 80%-power sample-sizing constant. The code's 2.0
+has no derivation anywhere. They answer different questions: 2.0 (about 1.96)
+tests whether an OBSERVED gain differs from zero, which is what `_gain` actually
+does, while 2.8 states what effect a study would detect 80% of the time. The code
+is defensible for its use; the naming is not, since a field called `mde_iou`
+means the second thing while computing the first.
+
+**Multi-meteorite ingestion was untested and was half broken.** Two scans of
+different in-plane size crashed. Fixed by padding to a common size with the
+padding marked invalid. `pipeline_v2.run_all` with two sources has still never
+completed end to end.
+
+**Leaderboard provenance.** All 44 rows now carry a per-row `tiler_regime` field,
+and `run_and_score` stamps new rows.
 
 ---
 
@@ -37,6 +106,15 @@ composition of four pluggable stages:
 - **Architecture contract, not a performance claim.** At n=19 val chondrules the
   MDE is 0.0142 IoU and the hierarchy measured −0.012 — inside the floor. The
   stages are not currently distinguishable from break-even.
+  **[CORRECTED 2026-08-04] "n=19 val chondrules" is the wrong label.**
+  `src/recount_chondrules.py` counted the val zone both ways over identical
+  voxels: 19 is the BINARY connected-components count, and the pipeline's own
+  same-id rule gives 36. `SE_REF_N` was left at 19 deliberately, because the
+  `SE_REF_IOU = 0.0071` it pairs with was bootstrapped over 60 validation SLICES,
+  so neither chondrule count was ever the resampling unit. The 0.0071 and the
+  0.0142 floor are unchanged. The 2026-08-04 section at the top of this file
+  already records the recount, so this file contradicts itself wherever it calls
+  19 a chondrule count; the same correction applies at every such site below.
 - No stage may hard-code ALH 83010; the entry point stays `run_all(sources)`.
 
 **Verified state (2026-07-29):** all four stages are already *wired* into
@@ -77,11 +155,16 @@ model's residual signal lives — use float32 for val maps that meta-models fit 
 **Also queued (2026-07-29), independent of the contract:**
 
 - **Relaunch the data-scaling curve** — `python -m src.data_scaling`, 12 runs ×
-  7,200 steps, ~10–11 h, resumable. **Stopped at 1 of 12 runs as of 2026-07-30, not running** (frac 0.25, test IoU 0.2823); the partial JSON is uncommitted
-  (`n_seeds: 1`, `sd: NaN`). It has **never completed the full sweep**; an earlier
-  attempt died at run 1/12 saving nothing. `results/data_scaling_v2.json` now
-  holds that single run and is deliberately uncommitted, so "does more annotated
-  data help?" remains unanswered. Now safe to run:
+  7,200 steps, ~10–11 h, resumable. **[UPDATED 2026-08-04] At 3 of 12 runs, not
+  running.** Fraction 0.25 is complete at 3 seeds (test IoU 0.2823 / 0.2664 /
+  0.2696, `n_seeds: 3`, `test_iou_sd` about 0.00841), and
+  `results/data_scaling_v2.json` is committed. Fractions 0.5, 0.75 and 1.0 stand
+  at 0 of 3 each, so 9 runs remain, roughly 5 hours. This entry said "1 of 12 as
+  of 2026-07-30" and "uncommitted" while the 2026-08-04 section above already
+  said 3 of 12, so the file contradicted itself. It has still **never completed
+  the full sweep**; an earlier attempt died at run 1/12 saving nothing. One
+  completed fraction gives no slope, so "does more annotated data help?" remains
+  unanswered. Now safe to run:
   it passes `leaderboard=False` so its subset runs no longer pollute
   `results/leaderboard_all.json`.
 - **Apply the same `leaderboard=False` isolation to `pipeline_v2.stage2_sweep`** —
@@ -114,10 +197,26 @@ Spec: [`specs/2026-07-29-complete-model-contract/spec.md`](specs/2026-07-29-comp
 The binding constraint is **data**, not method. Measured: 142 3D chondrules in
 the whole volume, **19 in validation**, giving a bootstrap SE of ±0.0071 IoU and
 a **minimum detectable effect of ~0.014 IoU**. Almost every method tested
-produced 0.005–0.014 IoU — at or below that floor, which is why six comparisons
+produced 0.005–0.014 IoU — at or below that floor, which is why nine comparisons
 flipped sign between val and test. We could not measure whether they work.
 
+**[CORRECTED 2026-08-04] "19 in validation" is the binary connected-components
+count.** `src/recount_chondrules.py` counted the val zone both ways over
+identical voxels, and the pipeline's own same-id rule gives 36. `SE_REF_N` was
+left at 19 deliberately, because the ±0.0071 SE it pairs with was bootstrapped
+over 60 validation SLICES, so neither chondrule count was ever the resampling
+unit. The 0.0071 and the ~0.014 floor are unchanged.
+
+**[CORRECTED 2026-08-04] The sign-flip count above read six when the paragraph
+was written.** It is nine as of 2026-08-04; the pretraining probe was the ninth.
+
 `pipeline_v2.py` makes adding meteorites a config change:
+
+**[CORRECTED 2026-08-04] That claim was FALSE.** `pipeline_v2.py` crashed on two
+scans of different in-plane size, so the ingestion path itself needed a fix (pad
+to the common in-plane size, with the padding marked invalid), and `run_all` with
+two sources has still never completed end to end. The list below describes what
+the code does today.
 
 - **`MeteoriteSource`** — point it at a new raw/label directory pair.
 - **`build_multi_split`** — per-meteorite contiguous z-slabs with buffers, then
@@ -137,6 +236,11 @@ flipped sign between val and test. We could not measure whether they work.
   assumed. On the current data none of these beat a zero-parameter baseline by
   more than 0.0005 IoU; with 19 validation chondrules that is not a finding
   that they fail, it is a finding that we cannot tell.
+  **[CORRECTED 2026-08-04]** 19 is the binary connected-components count of the
+  val zone; the pipeline's own same-id rule gives 36 over identical voxels
+  (`src/recount_chondrules.py`). `SE_REF_N` was left at 19 deliberately, because
+  the SE it pairs with was bootstrapped over 60 validation SLICES, so neither
+  chondrule count was ever the resampling unit. The floor is unchanged.
 - **Checkpoints** (`CNNRunner.save_checkpoint` / `load_checkpoint`) — weights
   used to die with the process, which is why the unlabeled-slice inference was
   never produced. The val-selected threshold is stored with the weights.
@@ -166,25 +270,31 @@ lever (+0.085 IoU from 3k→30k), larger than any architecture change.
 > current.** Retrained headline: **0.29409**. GNN rows bypass the tiler and are
 > unaffected.
 
+Every row marked [PRE-FIX] was produced under the defective tiler and is
+superseded. The marker is repeated per row on purpose: a row quoted on its own,
+away from the warning above, must still carry its own caveat.
+
 | model | test IoU | note |
 |---|---|---|
-| **`unet2d_s30000`** | **0.3168** | **best overall** — plain U-Net, just trained longer |
-| final pipeline (prune + z stacked) | 0.3214 | `unet2d_s30000` + FP-prune + z-smoothing |
-| `unet2d_s15000` | 0.3089 | earlier budget point, same architecture |
-| `long_p1_ctrl_b32` (7,200 steps) | 0.2834 | same architecture, less budget |
-| `hrnet_lite` | 0.2598 | best of 29 architectures at equal budget |
-| `swin_lite` | 0.2552 | from-scratch transformer |
-| `unet25d_k5` | 0.2547 | z-context — **CLAIM WITHDRAWN**, artifact corrupted (see CHANGELOG KNOWN ISSUES) |
-| `tiramisu` | 0.2478 | |
-| `resunet` | 0.2440 | |
-| `hist_gboost` (classical ML) | 0.203 | Tier B champion |
-| `gnn_graphsage` / `superpixel_gcn` | 0.178 / 0.177 | best GNNs |
-| `unet2d` (3,000 steps) | 0.2314 | budget-curve anchor |
-| intensity threshold | 0.130 | v1 floor |
+| **`unet2d_s30000`** | **0.3168** | [PRE-FIX] **best overall**: plain U-Net, just trained longer. Post-fix retrain: 0.29409 |
+| final pipeline (prune + z stacked) | 0.3214 | [PRE-FIX] `unet2d_s30000` + FP-prune + z-smoothing. Also selected on TEST, not val |
+| `unet2d_s15000` | 0.3089 | [PRE-FIX] earlier budget point, same architecture |
+| `long_p1_ctrl_b32` (7,200 steps) | 0.2834 | [PRE-FIX] same architecture, less budget |
+| `hrnet_lite` | 0.2598 | [PRE-FIX] best of 29 architectures at equal budget |
+| `swin_lite` | 0.2552 | [PRE-FIX] from-scratch transformer |
+| `unet25d_k5` | 0.2547 | [PRE-FIX] z-context. **CLAIM WITHDRAWN**, artifact corrupted (see CHANGELOG KNOWN ISSUES) |
+| `tiramisu` | 0.2478 | [PRE-FIX] |
+| `resunet` | 0.2440 | [PRE-FIX] |
+| `hist_gboost` (classical ML) | 0.203 | Tier B champion. Classical, not affected by the tiler |
+| `gnn_graphsage` / `superpixel_gcn` | 0.178 / 0.177 | best GNNs. Bypass the tiler, unaffected |
+| `unet2d` (3,000 steps) | 0.2314 | [PRE-FIX] budget-curve anchor |
+| intensity threshold | 0.130 | v1 floor. Not affected by the tiler |
 
-**Budget curve (same architecture, only steps differ) — still climbing:**
-3,000 → 0.2314 · 7,200 → 0.2834 · **15,000 → 0.3089** ·
-**30,000 → 0.3159 (plateaued: +0.052, +0.026, +0.007 per doubling)**.
+**Budget curve (same architecture, only steps differ), still climbing.** Every
+point below is [PRE-FIX]; read the SHAPE, not the heights. 3,000 gives 0.2314;
+7,200 gives 0.2834; 15,000 gives **0.3089**; 30,000 gives **0.3159**
+(plateaued: +0.052, +0.026, +0.007 per doubling). The 30,000 point re-scores to
+0.29409 post-fix, so the curve's top is roughly 0.02 lower than drawn.
 
 **On the final model these gains do NOT hold in isolation** — z-refine −6.2%,
 FP-prune −0.4% vs baseline; only the stacked combination (0.3214) beats it.
@@ -221,7 +331,7 @@ all stages complete; see Complete and the negative-results sections
 
 | # | Stage | Notes |
 |---|---|---|
-| 15 | Transformer + modern-conv families | mostly done; corrects an earlier over-broad exclusion — only *pretrained* models are impractical locally |
+| 15 | Transformer + modern-conv families | mostly done; corrects an earlier over-broad exclusion. [CORRECTED 2026-08-04] *Pretrained* models are not impractical locally either: a 14.0M-parameter ImageNet ResNet-18 U-Net trained here in 8150 s. [CORRECTED 2026-08-04] The 14.0M was written here as the ResNet-18's count; it is the whole net, ResNet-18 encoder plus U-Net decoder. The ResNet-18 alone is 11.69M |
 | 16 | GNN variants | GAT still degenerate (R=1.000) — a second, GAT-specific bug remains |
 | 17 | **Cascade: GNN coarse → CNN refinement** (Sky) | built, cross-fitting verified; escapes the 0.878 ceiling |
 | 21 | **Hierarchical cascade** (Sky) | **validated by measurement** — see below. NOTE: Sky specified **superpixels**; the feasibility test used a regular GRID, an unflagged substitution. Grids nest cleanly (each cell → 4) whereas SLIC levels do not nest, so a true superpixel hierarchy needs agglomerative merging on the region-adjacency graph. Superpixels adhere to intensity edges, so they should be MORE separable — the grid numbers are likely a lower bound. **Measured: 2.71x compute saving at 99.9% retention after fixing the merge rule.** |

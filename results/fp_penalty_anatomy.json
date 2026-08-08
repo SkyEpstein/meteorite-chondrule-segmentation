@@ -1,0 +1,76 @@
+{
+  "regime": "TEST zone, each arm at its own VAL-frozen threshold, scored once. AUPRC is threshold-free and computed on every 8th valid pixel.",
+  "caveat": "The matched control (7,200 steps, dice, raw only) has NO saved probability map: save_prob was added to run_cascade_arms after that arm ran. The two dice arms here differ from it in budget and in input channels respectively. Neither is a substitute.",
+  "arms": [
+    {
+      "arm": "dice, raw, 30k steps (unet2d_s30000)",
+      "map": "results/probs/unet2d_s30000.npy",
+      "threshold": 0.002,
+      "tag": "base",
+      "tp": 3437434,
+      "fp": 5805890,
+      "fn": 2444881,
+      "precision": 0.3718828854208724,
+      "recall": 0.5843675491706921,
+      "iou": 0.2940942599826064,
+      "fp_over_fn": 2.374712716079024,
+      "auprc_subsampled": 0.30890614848525033
+    },
+    {
+      "arm": "dice, raw+aux, 7.2k (arm_full_s0)",
+      "map": "results/probs/arm_full_s0.npy",
+      "threshold": 0.9,
+      "tag": "full",
+      "tp": 3368267,
+      "fp": 7404522,
+      "fn": 2514048,
+      "precision": 0.3126643434676016,
+      "recall": 0.5726090833285875,
+      "iou": 0.2535040506630735,
+      "fp_over_fn": 2.9452588017412555,
+      "auprc_subsampled": 0.2562370796777078
+    },
+    {
+      "arm": "TVERSKY .7/.3, raw, 7.2k (fp_penalty s0)",
+      "map": "results/probs/arm_fp_penalty_s0.npy",
+      "threshold": 0.002,
+      "tag": "fp0",
+      "tp": 2870950,
+      "fp": 7248386,
+      "fn": 3011365,
+      "precision": 0.28370932638267965,
+      "recall": 0.4880646480169797,
+      "iou": 0.2186440769613138,
+      "fp_over_fn": 2.407010110033158,
+      "auprc_subsampled": 0.23383209331368238
+    },
+    {
+      "arm": "TVERSKY .7/.3, raw, 7.2k (fp_penalty s1)",
+      "map": "results/probs/arm_fp_penalty_s1.npy",
+      "threshold": 0.006,
+      "tag": "fp1",
+      "tp": 2792227,
+      "fp": 7585469,
+      "fn": 3090088,
+      "precision": 0.2690603964502333,
+      "recall": 0.47468165169665344,
+      "iou": 0.20732638717698473,
+      "fp_over_fn": 2.454774427136056,
+      "auprc_subsampled": 0.21034898120981496
+    },
+    {
+      "arm": "TVERSKY .7/.3, raw, 7.2k (fp_penalty s2)",
+      "map": "results/probs/arm_fp_penalty_s2.npy",
+      "threshold": 0.002,
+      "tag": "fp2",
+      "tp": 2348798,
+      "fp": 6894498,
+      "fn": 3533517,
+      "precision": 0.2541082747972152,
+      "recall": 0.3992982354736188,
+      "iou": 0.18383285409280076,
+      "fp_over_fn": 1.9511715947595554,
+      "auprc_subsampled": 0.21781472965353982
+    }
+  ]
+}
