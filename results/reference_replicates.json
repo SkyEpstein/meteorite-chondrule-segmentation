@@ -1,0 +1,35 @@
+{
+  "regime": "UNet2D base 32 depth 4, dice, 30,000 steps, lr 3e-4, pos_frac 0.5, batch 16, patch 128, no augmentation; the FROZEN split; threshold selected on VAL and frozen for a single TEST scoring. Seed 0 is the historical `unet2d_s30000` row and was NOT re-run; its recipe was reconstructed from results/phase1/p1_ctrl_b32.json plus pipeline_v2.BEST_RECIPE, so replicates are a faithful reconstruction rather than a byte-identical re-run.",
+  "purpose": "The reference model had n=1 while the measured full-budget seed SD is 0.04517. Every gap in this repo is quoted against it.",
+  "reference_seed0_iou": 0.29409,
+  "summary": {
+    "n": 2,
+    "test_iou_all": [
+      0.2763082047977971,
+      0.26638787398034436
+    ],
+    "test_iou_mean": 0.2713480393890707,
+    "test_iou_sd": 0.0070147331926347254,
+    "spread": 0.00992033081745275
+  },
+  "runs": [
+    {
+      "seed": 1,
+      "model": "unet2d_s30000_seed1",
+      "test_iou": 0.26638787398034436,
+      "val_iou": 0.4117052434182661,
+      "threshold": 0.002,
+      "sec": 16977.8,
+      "error": null
+    },
+    {
+      "seed": 2,
+      "model": "unet2d_s30000_seed2",
+      "test_iou": 0.2763082047977971,
+      "val_iou": 0.45197512835952747,
+      "threshold": 0.9500000000000001,
+      "sec": 5215.9,
+      "error": null
+    }
+  ]
+}

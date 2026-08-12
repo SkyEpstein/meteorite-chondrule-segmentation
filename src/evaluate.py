@@ -181,6 +181,23 @@ def run_and_score(runner, data=None, root=".", extra=None, save_prob=None,
             # Save BOTH zones' probabilities: the meta-models (confidence, error,
             # prune, z-refine, combos) must be FIT on validation predictions and
             # only applied to test, so val probs are as necessary as test probs.
+            # [MUST] float16 IS DELIBERATE (~13 GB of maps as it is), and it is
+            # LOSSY IN A WAY THAT MATTERS. Every metric in `row` above was
+            # computed on the float32 array; what lands on disk has only ~15,000
+            # representable values in [0,1]. Threshold-derived metrics survive
+            # the cast (IoU, precision, recall, tp/fp/fn reproduce, and 10-bin
+            # ECE reproduces to five decimals) but RANKING metrics do not.
+            #
+            # Measured 2026-08-08 by regenerating from a checkpoint:
+            # resunet18_scratch_s30000 AUPRC is 0.44301 in float32, exactly its
+            # leaderboard value, and 0.33455 once cast, exactly what the saved
+            # map gives. The loss is not uniform across models (-0.033 to
+            # -0.118), so saved maps cannot even RANK by AUPRC.
+            #
+            # So: quote AUPRC (and any future ranking metric) from
+            # `results/leaderboard_all.json`. Never recompute it from
+            # `results/probs/`. Sky chose to keep float16 and carry this rule
+            # rather than double the disk. See CHANGELOG.md KNOWN ISSUES.
             os.makedirs(os.path.dirname(save_prob), exist_ok=True)
             np.save(save_prob, prob_test.astype(np.float16))
             np.save(save_prob.replace(".npy", "_val.npy"),

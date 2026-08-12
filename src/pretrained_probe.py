@@ -149,7 +149,18 @@ def build(arm, in_ch=1):
 
 def run_arm(arm, epochs=60, steps=500, seed=0, root="."):
     rec = best_recipe()
+    # [MUST, added 2026-08-08] The SEED goes in the name whenever it is not the
+    # default. It did not, and `main` had no --seed at all, so the only way to
+    # run a replicate was to call this directly — which would have written its
+    # checkpoint, both probability maps and its leaderboard row under the SAME
+    # name as seed 0 (`append_leaderboard` dedupes on `model`). That would have
+    # silently destroyed `resunet18_scratch_s30000`, test IoU 0.33569, the
+    # highest post-tiler-fix score in the repo, and replaced it with a different
+    # seed under its name. Seed 0 keeps the historical name so the committed
+    # result, its checkpoint and its maps stay valid.
     name = f"resunet18_{arm}_s{epochs * steps}"
+    if seed != 0:
+        name += f"_seed{seed}"
     print(f"\n=== {name} | recipe {rec.get('_source')} | "
           f"{epochs * steps} steps ===", flush=True)
     runner = CNNRunner(
@@ -161,33 +172,87 @@ def run_arm(arm, epochs=60, steps=500, seed=0, root="."):
     t0 = time.time()
     row = evaluate.run_and_score(
         runner, root=root,
-        extra={"recipe": rec.get("_source"), "arm": arm,
+        extra={"recipe": rec.get("_source"), "arm": arm, "seed": int(seed),
                "encoder": "resnet18", "pretrained": arm == "pretrained"},
         save_prob=f"results/probs/{name}.npy")
     row["sec"] = round(time.time() - t0, 1)
     row["val_iou"] = float(getattr(runner, "best_full_val_iou", float("nan")))
+    row["seed"] = int(seed)
     return row
 
 
-def _prior_rows(arms):
-    """Rows already in OUT for arms this invocation is NOT running.
+def _prior_rows(arms, seeds=(0,)):
+    """Rows already in OUT for (arm, seed) pairs this invocation is NOT running.
 
     `main` used to build `rows` from empty and rewrite OUT after every arm, so
     running the arms as two separate processes (the documented workflow) had the
-    second one silently delete the first one's result. Keep the other arm's row.
+    second one silently delete the first one's result. Keep the other rows.
+
+    [FIXED 2026-08-08] Keyed on (arm, seed), not arm. Keyed on arm alone, adding
+    a second seed of an arm would have dropped that arm's existing seed-0 row on
+    the way to writing the new one, which is the same clobber the naming fix in
+    `run_arm` prevents for the checkpoint and the maps.
     """
     try:
         with open(OUT) as fh:
             prior = json.load(fh).get("rows", [])
     except (OSError, ValueError):
         return []
+    running = {(a, int(s)) for a in arms for s in seeds}
     return [r for r in prior
-            if r.get("arm") in ("pretrained", "scratch") and r.get("arm") not in arms]
+            if r.get("arm") in ("pretrained", "scratch")
+            and (r.get("arm"), int(r.get("seed", 0))) not in running]
+
+
+def _report_gap(rows):
+    """Print the pretrained-minus-scratch gap, averaged over whatever seeds exist.
+
+    [FIXED 2026-08-08] The old form was `if len(rows) == 2`, which silently
+    printed nothing as soon as a second seed existed, and used `next(...)` to
+    pick "the" row per arm, which would have taken an arbitrary seed. It now
+    means over seeds per arm and states n.
+    """
+    import statistics
+    by = {}
+    for r in rows:
+        v = float(r.get("iou", float("nan")))
+        if v == v:
+            by.setdefault(r.get("arm"), []).append(v)
+    if not {"pretrained", "scratch"} <= set(by):
+        return
+    p, s = by["pretrained"], by["scratch"]
+    gap = statistics.fmean(p) - statistics.fmean(s)
+    print("\n=== PRETRAINING GAP (the data-starvation estimate) ===")
+    print(f"  pretrained {statistics.fmean(p):.5f} (n={len(p)})   "
+          f"scratch {statistics.fmean(s):.5f} (n={len(s)})   gap {gap:+.5f}")
+    for lab, v in (("pretrained", p), ("scratch", s)):
+        if len(v) > 1:
+            print(f"    {lab} seeds: "
+                  + " / ".join(f"{x:.5f}" for x in v)
+                  + f"   SD {statistics.stdev(v):.5f}")
+    print("  reference: plain unet2d_s30000 = 0.29409 (different architecture,")
+    print("             so compare it against the SCRATCH arm, not the "
+          "pretrained one)")
+    if len(p) < 2 or len(s) < 2:
+        print("  [HONESTY] n=1 seed on at least one arm. Pre-registered band: "
+              "a gap under 0.05 is ambiguous.")
+        print("            Measured seed SD is 0.0084 (n=3, frac 0.25, 7.2k "
+              "steps), but that is a")
+        print("            different regime and does not license shrinking "
+              "the band after the fact.")
+    else:
+        print("  [HONESTY] The 0.05 band was pre-registered at n=1. Seed SDs "
+              "measured HERE are printed above;")
+        print("            they describe this regime and supersede the 7.2k "
+              "figure for it, but the band")
+        print("            itself was registered in advance and is not to be "
+              "narrowed retroactively.")
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     arm, epochs, steps = "both", 60, 500
+    seeds = (0,)
     for a in [x for x in argv if x.startswith("--")]:
         k, _, v = a[2:].partition("=")
         if k == "arm":
@@ -196,37 +261,31 @@ def main(argv=None):
             epochs = int(v)
         elif k == "steps":
             steps = int(v)
+        elif k == "seed":
+            seeds = tuple(int(x) for x in v.split(","))
         else:
             raise SystemExit(f"unknown option {a}")
     if arm not in ("pretrained", "scratch", "both"):
         raise SystemExit("--arm must be pretrained, scratch or both")
 
     arms = ["pretrained", "scratch"] if arm == "both" else [arm]
-    rows = _prior_rows(arms)
-    for a in arms:                       # SEQUENTIAL: one training job at a time
-        rows.append(run_arm(a, epochs, steps))
-        json.dump({"regime": ("ResNet-18 encoder + U-Net decoder; the arms differ "
-                              "ONLY in encoder initialisation (ImageNet vs random). "
-                              "Frozen split, threshold on VAL, TEST scored once per "
-                              "arm. N=1 meteorite, n=1 seed per arm."),
-                   "rows": rows}, open(OUT, "w"), indent=2)
-        print(f"  {a}: test IoU={rows[-1].get('iou')}", flush=True)
+    rows = _prior_rows(arms, seeds)
+    # SEED-MAJOR so a complete one-seed comparison exists after the first pass.
+    for sd in seeds:
+        for a in arms:                   # SEQUENTIAL: one training job at a time
+            rows.append(run_arm(a, epochs, steps, seed=sd))
+            n_seeds = len({int(r.get("seed", 0)) for r in rows})
+            json.dump(
+                {"regime": ("ResNet-18 encoder + U-Net decoder; the arms differ "
+                            "ONLY in encoder initialisation (ImageNet vs "
+                            "random). Frozen split, threshold on VAL, TEST "
+                            "scored once per arm. N=1 meteorite; "
+                            f"{n_seeds} seed(s) present in this file, see each "
+                            "row's `seed` field."),
+                 "rows": rows}, open(OUT, "w"), indent=2)
+            print(f"  {a} seed={sd}: test IoU={rows[-1].get('iou')}", flush=True)
 
-    if len(rows) == 2:
-        p = next(r for r in rows if r.get("arm") == "pretrained")
-        s = next(r for r in rows if r.get("arm") == "scratch")
-        gap = float(p.get("iou", float("nan"))) - float(s.get("iou", float("nan")))
-        print(f"\n=== PRETRAINING GAP (the data-starvation estimate) ===")
-        print(f"  pretrained {p.get('iou'):.5f}   scratch {s.get('iou'):.5f}   "
-              f"gap {gap:+.5f}")
-        print(f"  reference: plain unet2d_s30000 = 0.29409 (different architecture,")
-        print(f"             so compare it against the SCRATCH arm, not the pretrained one)")
-        print(f"  [HONESTY] n=1 seed per arm. Pre-registered band: a gap under "
-              f"0.05 is ambiguous.")
-        print(f"            Measured seed SD is 0.0084 (n=3, frac 0.25, 7.2k "
-              f"steps), but that is a")
-        print(f"            different regime and does not license shrinking "
-              f"the band after the fact.")
+    _report_gap(rows)
     print(f"\nwrote {OUT}")
     return rows
 

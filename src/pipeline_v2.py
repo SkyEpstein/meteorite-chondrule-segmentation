@@ -238,7 +238,8 @@ def _straddler_ignore(lab_paths, idxs, slab, name):
     return ignore
 
 
-def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
+def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12,
+                      out_dir=None):
     """Per-meteorite contiguous z-slab split, CONCATENATED across meteorites.
 
     [LEAKAGE][MUST] Every meteorite contributes its own train/val/test slabs
@@ -397,8 +398,13 @@ def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
     }
     out["meta"] = meta
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    with open(SPLIT_JSON, "w") as f:
+    # `out_dir=None` keeps the historical destination. A synthetic or smoke run
+    # MUST pass its own, or it silently overwrites the real split record with a
+    # split of fake data. Same reason `run_all` threads out_dir everywhere.
+    split_dir = OUT_DIR if out_dir is None else out_dir
+    split_json = os.path.join(split_dir, os.path.basename(SPLIT_JSON))
+    os.makedirs(split_dir, exist_ok=True)
+    with open(split_json, "w") as f:
         json.dump(meta, f, indent=2, default=float)
 
     print(f"=== multi-meteorite split ({len(per_source)} meteorite(s)) ===",
@@ -417,7 +423,7 @@ def build_multi_split(sources, val_frac=0.15, test_frac=0.2, buffer=12):
         s = meta["zone_stats"][z]
         print(f"  {z:>6} {s['n_slices']:>8} {s['n_chondrules_3d']:>15} "
               f"{s['pos_frac']:>10.5f}", flush=True)
-    print(f"  wrote {SPLIT_JSON}", flush=True)
+    print(f"  wrote {split_json}", flush=True)
     return out
 
 
@@ -493,38 +499,54 @@ class HierMaskedRunner(CNNRunner):
         return (prob * self._alive_stack(raw)).astype(np.float32)
 
 
-def stage2_sweep(zones, alive_masks, budgets=(DEFAULT_BUDGET,), archs=None):
+def stage2_sweep(zones, alive_masks, budgets=(DEFAULT_BUDGET,), archs=None,
+                 out_dir=OUT_DIR, leaderboard=False, recipe=None,
+                 steps_per_epoch=STEPS_PER_EPOCH):
     """Train each candidate architecture INSIDE the hierarchy's alive mask.
 
     `zones` is a `build_multi_split` result; `alive_masks` maps each zone to its
     (n,H,W) bool `final_alive_mask` from the cascade. `archs` is a name ->
     constructor(in_ch) mapping (default: `default_archs()`), `budgets` a list of
-    TOTAL training steps (each becomes `budget // STEPS_PER_EPOCH` epochs).
+    TOTAL training steps (each becomes `budget // steps_per_epoch` epochs).
+    `recipe` overrides individual `BEST_RECIPE` keys, which is what lets a smoke
+    run use a patch smaller than the image.
 
-    Every run goes through `evaluate.run_and_score`, so it lands on the shared
-    leaderboard under the same rules as every other model. Returned rows carry
-    `val_iou` (the runner's frozen full-validation IoU) and are RANKED BY IT —
-    the winner must be chosen on validation, never on the test column.
-    [LEAKAGE][MUST]
+    [CORRECTED 2026-08-08] `leaderboard` now defaults to **False**, and the old
+    behaviour was a latent defect rather than a choice. This function scores
+    against a `build_multi_split` split, which is NOT the frozen `split.json`
+    roster, and `run_and_score`'s own docstring marks `leaderboard=False` a
+    [MUST] for exactly that case ("a different split, a data subset, or a
+    reduced budget"). It was passing nothing, so the first successful `run_all`
+    would have written five rows onto the shared leaderboard under a different
+    split, where `fig_leaderboard` plots every row as one comparable ranking.
+    Nothing was corrupted because `stage2_sweep` has never completed: there are
+    zero `hier_*` rows in `results/leaderboard_all.json` today. Pass
+    `leaderboard=True` deliberately if a run really is roster-comparable.
+
+    Returned rows carry `val_iou` (the runner's frozen full-validation IoU) and
+    are RANKED BY IT — the winner must be chosen on validation, never on the
+    test column. [LEAKAGE][MUST]
     """
     archs = default_archs() if archs is None else archs
+    rec = dict(BEST_RECIPE) if recipe is None else {**BEST_RECIPE, **recipe}
     aidx = alive_index(zones, alive_masks)
     rows = []
     for budget in budgets:
-        epochs = max(1, int(budget) // STEPS_PER_EPOCH)
+        epochs = max(1, int(budget) // steps_per_epoch)
         for name, ctor in archs.items():
-            run_name = f"hier_{name}_s{epochs * STEPS_PER_EPOCH}"
+            run_name = f"hier_{name}_s{epochs * steps_per_epoch}"
             runner = HierMaskedRunner(
                 run_name, ctor, dice_loss, k=1, epochs=epochs,
-                steps_per_epoch=STEPS_PER_EPOCH, batch=BEST_RECIPE["batch"],
-                patch=BEST_RECIPE["patch"], pos_frac=BEST_RECIPE["pos_frac"],
-                lr=BEST_RECIPE["lr"], augment=BEST_RECIPE["augment"],
-                val_stride=BEST_RECIPE["val_stride"], alive_index=aidx)
+                steps_per_epoch=steps_per_epoch, batch=rec["batch"],
+                patch=rec["patch"], pos_frac=rec["pos_frac"],
+                lr=rec["lr"], augment=rec["augment"],
+                val_stride=rec["val_stride"], alive_index=aidx)
             row = evaluate.run_and_score(
                 runner, data=zones,
-                extra={"arch": name, "budget": int(epochs * STEPS_PER_EPOCH),
+                extra={"arch": name, "budget": int(epochs * steps_per_epoch),
                        "stage": "hier_stage2"},
-                save_prob=os.path.join(OUT_DIR, "probs", f"{run_name}.npy"))
+                save_prob=os.path.join(out_dir, "probs", f"{run_name}.npy"),
+                leaderboard=leaderboard)
             row["val_iou"] = float(getattr(runner, "best_full_val_iou",
                                            float("nan")))
             print(f"[stage2] {run_name:28s} val IoU={row['val_iou']:.4f} "
@@ -687,16 +709,30 @@ def _gain(value, mde):
 # ---------------------------------------------------------------------------
 # 6. The whole workflow.
 # ---------------------------------------------------------------------------
-def run_all(sources, out_dir=OUT_DIR):
+def run_all(sources, out_dir=OUT_DIR, budgets=None, archs=None,
+            leaderboard=False, recipe=None, steps_per_epoch=STEPS_PER_EPOCH,
+            hier_levels=HIER_LEVELS):
     """Split -> power -> hierarchy filter -> stage-2 sweep -> confidence sweep.
 
     Writes `out_dir/pipeline_v2.json` with every number and an explicit
     `below_noise_floor` flag on each reported gain.
+
+    [ADDED 2026-08-08] Everything after `out_dir` exists so this can be proven
+    end to end at a tiny budget before real second-meteorite data arrives, which
+    the 2026-08-04 handoff listed as the next thing to establish. Defaults
+    reproduce the previous behaviour in every respect EXCEPT `leaderboard`,
+    which is now False; see `stage2_sweep` for why the old default was a defect.
+
+    `out_dir` is now threaded through the split record, the probability maps and
+    the JSON. It previously named only the final JSON while `build_multi_split`,
+    `save_prob` and the probability RELOAD all used the module-level `OUT_DIR`,
+    so passing a custom `out_dir` wrote the summary to one place and the
+    artifacts it describes to another.
     """
     t0 = time.time()
     os.makedirs(out_dir, exist_ok=True)
 
-    zones = build_multi_split(sources)
+    zones = build_multi_split(sources, out_dir=out_dir)
     power = power_report(zones["meta"]["n_chondrules_3d"]["val"])
     mde = power["mde_iou"]
 
@@ -707,19 +743,19 @@ def run_all(sources, out_dir=OUT_DIR):
     # --- hierarchy as a FILTER: thresholds fit on VAL, frozen for train/test ---
     print("\n=== hierarchy filter (fit on VAL, frozen for train/test) ===",
           flush=True)
-    fit = hierarchy.run_cascade(Rv, Mv, Vv, levels=HIER_LEVELS,
+    fit = hierarchy.run_cascade(Rv, Mv, Vv, levels=hier_levels,
                                 target_recall=HIER_TARGET_RECALL)
     thr_levels = [lv["threshold"] for lv in fit["levels"]]
     app_tr = hierarchy.run_cascade(Rtr, Mtr, Vtr, thresholds=thr_levels,
-                                   levels=HIER_LEVELS)
+                                   levels=hier_levels)
     app_te = hierarchy.run_cascade(Rt, Mt, Vt, thresholds=thr_levels,
-                                   levels=HIER_LEVELS)
+                                   levels=hier_levels)
     # Applying the frozen thresholds back to VAL reproduces the fit pass exactly
     # (the drop rule is `feature >= t` with the same t), so it is not re-run.
     alive_masks = {"train": app_tr["final_alive_mask"],
                    "val": fit["final_alive_mask"],
                    "test": app_te["final_alive_mask"]}
-    hier_out = {"levels_config": list(HIER_LEVELS),
+    hier_out = {"levels_config": list(hier_levels),
                 "target_recall": HIER_TARGET_RECALL,
                 "thresholds_from_val": [float(t) for t in thr_levels],
                 "val_levels": fit["levels"],
@@ -738,15 +774,20 @@ def run_all(sources, out_dir=OUT_DIR):
 
     # --- stage-2 architecture sweep inside the alive mask ---
     print("\n=== stage-2 sweep (inside the alive mask) ===", flush=True)
-    ranked = stage2_sweep(zones, alive_masks)
+    ranked = stage2_sweep(zones, alive_masks,
+                          budgets=(DEFAULT_BUDGET,) if budgets is None
+                          else budgets,
+                          archs=archs, out_dir=out_dir,
+                          leaderboard=leaderboard, recipe=recipe,
+                          steps_per_epoch=steps_per_epoch)
     win = ranked[0]
     print(f"\nWINNER (on VALIDATION): {win['model']} "
           f"val IoU={win['val_iou']:.4f}", flush=True)
 
     # --- confidence / prune / z-refine on the winner's own probabilities ---
-    pv = np.load(os.path.join(OUT_DIR, "probs",
+    pv = np.load(os.path.join(out_dir, "probs",
                               f"{win['model']}_val.npy")).astype(np.float32)
-    pt = np.load(os.path.join(OUT_DIR, "probs",
+    pt = np.load(os.path.join(out_dir, "probs",
                               f"{win['model']}.npy")).astype(np.float32)
     conf = confidence_sweep(pv, Rv, Mv, Vv, pt, Rt, Mt, Vt,
                             float(win["threshold"]))

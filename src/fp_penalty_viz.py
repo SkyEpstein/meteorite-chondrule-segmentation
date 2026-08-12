@@ -36,14 +36,22 @@ To remove the confound properly, run the control and save its map:
 
     python -m src.run_cascade_arms --arm=control --seed=0
 
-[DEFECT, found here] The AUPRC this module reports for `unet2d_s30000` is 0.309,
-against the 0.427 in its leaderboard row. That is not an error in this module.
-`metrics.auprc` on the live map returns 0.30937 exactly, strides of 2/4/8 agree
-to 0.0005, and no definition tried (no valid mask, per-slice mean, per-slice
-median, pre-fix backup map) reproduces 0.427. The same row's IoU and tp/fp/fn
-DO match the map. See CHANGELOG.md's KNOWN ISSUES. The numbers in these figures
-are measured from the maps on disk; where they disagree with a leaderboard
-field, the disagreement is the finding.
+[MUST READ] THE AUPRC NUMBERS IN THIS FIGURE ARE UNDERSTATED. `run_and_score`
+saves probability maps as **float16** while computing its metrics on float32,
+and AUPRC is a ranking metric that float16 cannot carry: only ~15,000 values are
+representable in [0,1]. Settled 2026-08-08 by regenerating from a checkpoint —
+`resunet18_scratch_s30000` scores 0.44301 in float32, exactly its leaderboard
+value, and 0.33455 once cast to float16, exactly what the saved map gives.
+
+This module reads saved maps, so every AUPRC it prints is the float16 value:
+0.309 for `unet2d_s30000` against a true 0.42703. The loss is NOT uniform across
+models (-0.033 to -0.118 measured), so these AUPRCs cannot be used to rank arms
+either. They are retained only because all five arms here are degraded in the
+same direction, and because the conclusion rests on the CURVES and on the
+threshold-derived precision/recall/FP counts, none of which the cast affects.
+
+Quote AUPRC from `results/leaderboard_all.json`. Never recompute it from
+`results/probs/`.
 
 Outputs:
   results/fp_penalty_anatomy.json        the numbers behind the figures

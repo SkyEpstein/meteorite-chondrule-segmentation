@@ -102,10 +102,49 @@ project. Honest numbers only; evaluation regime stated with every metric.
   is the structural cause of the misattribution above, and it is still
   unguarded. The provenance stamp added today records the commit and the time
   but not the map path.
-- **[NEW 2026-08-07] 🔴 `unet2d_s30000`'s recorded AUPRC of 0.42703 cannot be
-  reproduced from any map on disk, under any definition tried.** Found while
-  building the fp_penalty figures. Measured on the live post-fix map
-  `results/probs/unet2d_s30000.npy` with the project's own `metrics.auprc`:
+- **[RESOLVED 2026-08-08, and my 2026-08-07 framing below was WRONG] The
+  recorded AUPRC values are CORRECT. The saved probability maps are lossy and
+  must never be used to recompute a ranking metric.**
+
+  `evaluate.run_and_score` computes every metric on the in-memory **float32**
+  probabilities and then saves the map as **float16**
+  (`np.save(save_prob, prob_test.astype(np.float16))`, `src/evaluate.py`).
+  Threshold-derived metrics survive that cast: IoU, precision, recall and
+  tp/fp/fn all reproduce from the saved map, and 10-bin ECE reproduces to five
+  decimals. **AUPRC does not**, because it is a fine-grained ranking metric and
+  float16 offers only ~15,000 representable values in [0,1].
+
+  Settled by regenerating the probabilities from a checkpoint, which is the one
+  test that separates the two explanations:
+
+  | `resunet18_scratch_s30000` | AUPRC |
+  |---|---|
+  | recorded in the leaderboard | **0.44301** |
+  | regenerated from checkpoint, float32 | **0.44301** (exact) |
+  | that same array cast to float16 | 0.33455 |
+  | the saved float16 map on disk | 0.33455 (exact) |
+
+  The cost of the cast is the whole discrepancy, and it is NOT uniform:
+  `unet2d_s30000` -0.11766, `resunet18_scratch` -0.10846,
+  `resunet18_pretrained` -0.05466, `unet2d_s30000_auggeom` -0.03266. So the
+  saved maps cannot be used to rank models by AUPRC either.
+
+  **Consequence for work already done:** the AUPRC figures in
+  `results/figures/fp_penalty_pr.png` are computed from saved float16 maps and
+  are therefore all understated, by an amount that differs per model. The
+  precision-recall CURVES and every threshold-derived number in that figure are
+  unaffected. Quote AUPRC from `results/leaderboard_all.json`, never from a
+  recomputation over `results/probs/`.
+
+  **[SUPERSEDED, kept because the reasoning error is instructive]** The
+  2026-08-07 entry read: "🔴 `unet2d_s30000`'s recorded AUPRC of 0.42703 cannot
+  be reproduced from any map on disk, under any definition tried." Every
+  measurement in it was correct and its conclusion was backwards: it treated a
+  lossy artifact as evidence against the record. It also reported float16 as
+  "refuted" on the strength of a test that could not have detected it, adding
+  uniform random jitter inside each quantization band, which restores random
+  order and is exactly how average-precision already handles ties. That test
+  could only ever return "no change". The original measurements follow.
 
   | quantity | value |
   |---|---|
@@ -123,13 +162,10 @@ project. Honest numbers only; evaluation regime stated with every metric.
   +0.118. Subsampling is excluded: strides of 2, 4 and 8 all give 0.3089.
 
   **AUPRC 0.427 is quoted as part of the headline metric set in `HANDOFF.md`,
-  `CHANGELOG.md` and `README.md`.** Nothing has been changed on the strength of
-  this, and the number is NOT retracted here, because the measurement says only
-  that the row and the artifact disagree, not which one is wrong. Settle it
-  before quoting 0.427 again. Note also that the no-valid-mask value 0.31676 is
-  digit-for-digit the `baseline_test` in `results/final_pipeline.json`, which is
-  an IoU, not an AUPRC; that is probably coincidence and is worth ten minutes to
-  confirm it is.
+  `CHANGELOG.md` and `README.md`.** [2026-08-08] It is correct and stays. Note
+  that the no-valid-mask value 0.31676 is digit-for-digit the `baseline_test` in
+  `results/final_pipeline.json`, which is an IoU, not an AUPRC; that is probably
+  coincidence and is worth ten minutes to confirm it is.
 
 - **`results/probs/` has no file for `unet2d_s15000`, `unet25d_k5_s15000`,
   `unet25d_k5_s30000`** — the 15k point (0.3089) quoted in the docs cannot be
@@ -180,6 +216,129 @@ project. Honest numbers only; evaluation regime stated with every metric.
   today (winning recipe has `aug: false`).
 
 
+
+### 2026-08-08: The best number in the repo was seed luck, and the seed SD is 5.4x what was assumed
+
+*Spec (condensed). **Problem:** `resunet18_scratch_s30000` (test IoU 0.33569) was
+the highest post-tiler-fix score in the repo and the only positive result left
+standing, at n=1 seed. **Approach:** run seeds 1 and 2 at the same 30,000-step
+budget. **Acceptance:** three seeds, a real SD, and an honest restatement
+whichever way it lands. Met.*
+
+**[RETRACTED as a headline] 0.33569 is not the scratch arm's score.** It is the
+best of three draws.
+
+| `resunet18_scratch_s30000`, 30,000 steps | test IoU | val IoU | frozen thr |
+|---|---|---|---|
+| seed 0 | 0.33569 | 0.4957 | 0.002 |
+| seed 1 | **0.26098** | 0.5031 | 0.950 |
+| seed 2 | 0.34233 | 0.4696 | 0.002 |
+| **mean, n=3** | **0.31300** | | |
+| **SD** | **0.04517** | | |
+
+Spread 0.08135 between best and worst seed of an identical configuration.
+
+**Seed SD for THIS configuration at the full budget is 0.04517.** The only seed
+variance previously measured on this project was **0.0084** (n=3, fraction 0.25,
+7,200 steps, recorded 2026-08-04). This is **5.4x** that, at the full
+30,000-step budget on the full training set.
+
+> **[CORRECTED later the same day, and the correction matters.]** This entry
+> first read "THE NUMBER THAT MATTERS: seed SD at the full budget is 0.04517",
+> and treated it as a single noise bar recalibrating every comparison in the
+> repo. **That over-generalised from one configuration.** Replicating
+> `unet2d_s30000` the same day gave SD **0.01403** at the same budget, 3.2x
+> smaller. There is no single full-budget noise number; it depends on the
+> architecture being compared. See "The reference model has error bars" below.
+> A 2-sigma bar of 0.128 applies to ResNet-vs-ResNet comparisons, not to the
+> UNet2D family, which is most of this repo.
+
+Consequences, none of which are re-measurements, only restatements against the
+newly measured noise:
+
+- scratch ResNet-18 against plain `unet2d_s30000` (0.29409, n=1) is **+0.0189**,
+  about 0.4 SD. The +0.0416 quoted on 2026-08-04 was seed luck.
+- the pretraining gap is now **-0.01031** (pretrained 0.30269 n=1 against
+  scratch 0.31300 n=3), still inside the band, still null. The 2026-08-04 value
+  of -0.033 was measured against the lucky scratch seed.
+- geometry augmentation's -0.0501 is about 1.1 SD and should not be described as
+  an established effect.
+- the 30,000-step `full` arm's -0.033 against `unet2d_s30000` is about 0.7 SD.
+
+**It is real model variance, not threshold-selection variance.** Seed 1 froze
+its threshold at 0.95 while seeds 0 and 2 chose 0.002, a 475x difference on an
+identical configuration, which made threshold selection the obvious suspect. It
+is not the cause. Holding the threshold FIXED across all three seeds, the SD is
+0.0551 at 0.002 and 0.0488 at 0.95, against 0.0452 with val-selected thresholds,
+so selection slightly REDUCES the spread. Seed 1 is simply a worse model: it
+scores 0.24373 at 0.002 and 0.26097 at 0.95, below the other two at both. (Those
+test numbers are a DIAGNOSTIC at thresholds not selected on val, recorded to
+locate the variance, and must never be used to select.)
+
+Noted and not claimed: test IoU was higher at 0.95 than at 0.002 for all three
+seeds (+0.0075, +0.0172, +0.0053) while val preferred 0.002 for two of them.
+That is three observations of a consistent val/test disagreement about the
+operating point, not a result.
+
+**The reference model has error bars now, and it was the high draw.**
+`unet2d_s30000` (0.29409) is the number every gap in this repo is quoted
+against, and it had never been run twice. Two replicates at the reconstructed
+recipe (`src/reference_replicates.py`, 30,000 steps, seed 0 NOT re-run):
+
+| `unet2d_s30000` | test IoU |
+|---|---|
+| seed 0, the reference | **0.29409** |
+| seed 2 | 0.27631 |
+| seed 1 | 0.26639 |
+| **mean, n=3** | **0.27893** |
+| **SD** | **0.01403** |
+
+The reference sits **+1.08 SD above the mean of its own configuration**, so it is
+the top of its own three-seed spread, the same pattern as the scratch arm.
+**Every gap quoted against 0.29409 shifts by -0.01516 if the mean is used**, in
+the same direction for all of them, because they share the one anchor:
+
+| effect | vs 0.29409 | vs the n=3 mean |
+|---|---|---|
+| geometry augmentation | -0.0501 | **-0.0349** |
+| full pipeline at 30k | -0.0328 | -0.0176 |
+| over-predict + prune | +0.0087 | +0.0239 |
+| scratch ResNet-18 (n=3 mean) | +0.0189 | +0.0341 |
+
+**Two things NOT to conclude from this.** First, that UNet2D is genuinely more
+seed-stable than ResNet18-UNet: the SD intervals at n=3 are [0.0073, 0.0882] and
+[0.0235, 0.2840] and overlap heavily, so the 3.2x is not established, only
+measured. Second, that any of the effects above is now resolved. The closest is
+geometry augmentation: against the n=3 mean its gap is -0.0349 with a 2-sigma
+bar of about 0.032 at the point-estimate SD, which is marginally outside, but
+that bar ranges from about 0.017 to 0.20 across the SD's own interval. It is now
+**the best candidate for a real effect in this repo** and worth two seeds of its
+own to settle, which is a different statement from "established".
+
+The scratch ResNet-18 against UNet2D, both at n=3, is **+0.0341 with SE 0.0273,
+t = 1.25**. Still not resolved, and still the largest apparent effect measured
+here.
+
+[HONESTY] The replicate recipe was RECONSTRUCTED from
+`results/phase1/p1_ctrl_b32.json` plus `pipeline_v2.BEST_RECIPE`, because no
+single record holds all of it; seed 0 predates checkpointing so there is nothing
+to diff against. If the replicates are low because the reconstruction differs
+from the original somewhere, that is indistinguishable from the reference being
+a high draw, using these runs alone. Seed 1 also took 16,978 s against the
+original's recorded 5,195 s, most likely machine contention (other jobs were
+running) but not verified. **That the most-cited number in the project has no
+single complete record of how it was produced is a defect in its own right.**
+
+**Also fixed here, a clobber that had not fired yet.** `pretrained_probe` had no
+`--seed` option and did not put the seed in the model name, so the only way to
+run a replicate was to call `run_arm` directly, which would have written its
+checkpoint, both probability maps and its leaderboard row under the SAME name as
+seed 0 (`append_leaderboard` dedupes on `model`), silently destroying the repo's
+best result. `_prior_rows` keyed on arm alone would have dropped its JSON row
+too. Seed 0 keeps the historical name; other seeds get `_seed{n}`; `_prior_rows`
+keys on (arm, seed); `_report_gap` means over seeds instead of printing nothing
+once more than two rows exist. Verified before the run, and seed 0's checkpoint
+and maps are still byte-dated 2026-08-04 afterwards.
 
 ### 2026-08-07: The complete model end to end, five stage-3 arms, and two more non-results rendered as results
 
@@ -476,6 +635,12 @@ carries [PRE-FIX] in its own cell. Rows that never touched the CNN tiler
 **The control arm, and the probe's verdict: NULL.** The scratch arm, identical
 in every respect except that its ResNet-18 encoder starts from random weights,
 scores **test IoU 0.33569** against the pretrained arm's 0.30269.
+
+> **[FORWARD POINTER, added 2026-08-08]** Every scratch-arm number in this entry
+> is the n=1 seed 0 value. At n=3 the arm is **0.31300 +/- 0.04517** (0.33569 /
+> 0.26098 / 0.34233), so 0.33569 was its luckiest draw, the gap below becomes
+> **-0.0103**, and the entry's "first measured seed variance" of 0.0084 is 5.4x
+> too small for this budget. The verdict stays NULL. See the 2026-08-08 entry.
 
 | metric | pretrained | scratch | gap |
 |---|---|---|---|

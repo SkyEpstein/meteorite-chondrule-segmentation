@@ -6,18 +6,31 @@ best model by a **leakage-free** foreground-IoU sweep. First sample: Allan Hills
 83010 (**ALH 83010**), a 531-slice micro-CT volume with a hand-labeled central
 band.
 
-> **Status.** Current best test IoU is **0.33569** (`resunet18_scratch_s30000`,
-> a ResNet-18 encoder with a U-Net decoder, trained from random init). The
+> **Status.** Best test IoU is **0.31300 +/- 0.04517** (`resunet18_scratch_s30000`,
+> a ResNet-18 encoder with a U-Net decoder, trained from random init), over
+> **three seeds** at 30,000 steps: 0.33569 / 0.26098 / 0.34233. The
 > long-standing headline model `unet2d_s30000`, a plain 2D U-Net at 30,000
-> steps, scores **0.29409**. Baselines: classical-ML 0.203, intensity threshold
-> 0.130. The practical annotation ceiling is **0.85 to 0.92** (1 to 2 px
-> boundary tolerance), so IoU near 1.0 is not reachable against hand-drawn
-> labels.
+> steps, scores **0.29409** at n=1 seed. Baselines: classical-ML 0.203,
+> intensity threshold 0.130. The practical annotation ceiling is **0.85 to
+> 0.92** (1 to 2 px boundary tolerance), so IoU near 1.0 is not reachable
+> against hand-drawn labels.
 >
-> Both current numbers are n=1 seed. Neither is being promoted as a result: the
-> gap between them sits inside the ambiguity band registered before they were
-> measured, and this dataset cannot resolve differences that small (see
-> "What this dataset can and cannot measure" below).
+> **[RETRACTED 2026-08-08] This line previously read "current best test IoU is
+> 0.33569".** That was the best of three draws of one configuration, quoted
+> before the other two seeds existed.
+>
+> **`unet2d_s30000` also has three seeds now**: 0.29409 / 0.27631 / 0.26639,
+> mean **0.27893**, SD **0.01403**. The long-quoted 0.29409 is the top of that
+> spread, so every gap in this repo measured against it is measured from an
+> anchor about 1.08 SD high.
+>
+> Nothing here is promoted as a result. Seed variance at the full budget is
+> configuration-dependent: 0.01403 for UNet2D and 0.04517 for ResNet18-UNet,
+> both n=3 with intervals that overlap heavily, so use the SD of the arms
+> actually being compared rather than one global number. On that basis the
+> ResNet-18 arm leads the plain U-Net by +0.0341 with SE 0.0273 (t = 1.25),
+> which is the largest apparent effect in the project and still short of
+> resolution. See "What this dataset can and cannot measure" below.
 >
 > **The previous headline of 0.3168, and 0.3214 with FP-pruning and z-smoothing
 > stacked, are WITHDRAWN.** They were the front-page numbers until 2026-08-04.
@@ -47,13 +60,20 @@ band.
 >   unbiased figure would need a holdout that took no part in selection.
 > - **A residual tile-boundary artifact remains**, 37 to 201 times the median
 >   jump at tile edges. Documented, not fixed.
-> - **0.33569 against 0.29409 does not isolate architecture.** `resunet18_*` is
->   BatchNorm throughout while `unet2d_s30000` uses GroupNorm
+> - **The ResNet-18 arm against `unet2d_s30000` does not isolate architecture.**
+>   `resunet18_*` is BatchNorm throughout while `unet2d_s30000` uses GroupNorm
 >   (`models_cnn._norm`), so that comparison crosses a normalisation change too.
-> - The ImageNet-pretrained twin of the best model scored **0.30269**. The gap of
->   -0.033 is inside the 0.05 band registered before the numbers arrived, so it
->   is not evidence that pretraining hurts, and the scratch arm's val-frozen
->   threshold sits on the documented grid floor.
+>   [UPDATED 2026-08-08] The gap is +0.0189 at n=3 against n=1, about 0.4 seed
+>   SDs. The +0.0416 this bullet used to cite compared the plain U-Net to the
+>   ResNet arm's luckiest seed.
+> - The ImageNet-pretrained twin scored **0.30269** (n=1) against the scratch
+>   arm's 0.31300 (n=3), a gap of **-0.0103**, inside the 0.05 band registered
+>   before the numbers arrived. Not evidence that pretraining hurts.
+> - **[RESOLVED 2026-08-08] The scratch arm's grid-floor threshold does not
+>   gate any of this.** Two of its three seeds froze 0.002 and one froze 0.95.
+>   Holding the threshold fixed across all three gives SD 0.0551 at 0.002 and
+>   0.0488 at 0.95, against 0.0452 with val-selected thresholds, so selection
+>   slightly reduces the spread rather than causing it.
 
 ## Why the evaluation is trustworthy
 - **Leakage-free split** — train/val/test are contiguous z-slabs (never random

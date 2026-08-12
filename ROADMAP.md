@@ -25,6 +25,17 @@ pretrained won validation by +0.0325 and lost test by -0.0330. [UNVERIFIED] The
 scratch arm's val-frozen threshold is 0.002, the documented grid floor, so do not
 treat -0.033 as clean until that is settled.
 
+> **[UPDATED 2026-08-08]** The scratch arm now has three seeds: 0.33569 /
+> 0.26098 / 0.34233, **mean 0.31300, SD 0.04517**. Both readings in this entry,
+> the one above and the one below, were computed against 0.33569, which was its
+> luckiest draw.
+> The pretraining gap is **-0.0103** against the three-seed mean, still null and
+> now further inside the band. The +0.0416 architecture gap is **+0.0189**,
+> about 0.4 SD. The [UNVERIFIED] threshold caveat is RESOLVED and was a dead
+> end: with the threshold held fixed across the three seeds the SD is 0.0551 at
+> 0.002 and 0.0488 at 0.95, against 0.0452 with val-selected thresholds, so
+> selection is not the variance source. See CHANGELOG.md 2026-08-08.
+
 **Second reading, the architecture one.** Scratch ResNet18-UNet (0.33569) beats
 plain `unet2d_s30000` (0.29409) by +0.0416. Also n=1 seed, also inside the
 ambiguity band. [CORRECTED 2026-08-04] It does not isolate architecture:

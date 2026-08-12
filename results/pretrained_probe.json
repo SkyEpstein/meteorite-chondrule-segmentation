@@ -1,5 +1,5 @@
 {
-  "regime": "ResNet-18 encoder + U-Net decoder; the arms differ ONLY in encoder initialisation (ImageNet vs random). Frozen split, threshold on VAL, TEST scored once per arm. N=1 meteorite, n=1 seed per arm.",
+  "regime": "ResNet-18 encoder + U-Net decoder; the arms differ ONLY in encoder initialisation (ImageNet vs random). Frozen split, threshold on VAL, TEST scored once per arm. N=1 meteorite; 3 seed(s) present in this file, see each row's `seed` field.",
   "rows": [
     {
       "model": "resunet18_pretrained_s30000",
@@ -42,6 +42,56 @@
       "encoder": "resnet18",
       "pretrained": false,
       "val_iou": 0.495689186031029
+    },
+    {
+      "model": "resunet18_scratch_s30000_seed1",
+      "tier": "C_cnn",
+      "iou": 0.26097662919718256,
+      "dice": 0.4139277812997007,
+      "precision": 0.30822211309797093,
+      "recall": 0.6299819033832769,
+      "tp": 3705752,
+      "fp": 8317240,
+      "fn": 2176563,
+      "auprc": 0.4416687978424252,
+      "ece": 0.09712743601257982,
+      "threshold": 0.9500000000000001,
+      "per_slice_iou_median": 0.2504765843024555,
+      "sec": 4035.7,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "arm": "scratch",
+      "seed": 1,
+      "encoder": "resnet18",
+      "pretrained": false,
+      "scored_commit": "180bee0-dirty",
+      "scored_utc": "2026-08-08T17:19:51+00:00",
+      "tiler_regime": "post",
+      "val_iou": 0.5030559835487128
+    },
+    {
+      "model": "resunet18_scratch_s30000_seed2",
+      "tier": "C_cnn",
+      "iou": 0.34232972755350305,
+      "dice": 0.5100531121774748,
+      "precision": 0.42991295937878954,
+      "recall": 0.6269167836132543,
+      "tp": 3687722,
+      "fp": 4890112,
+      "fn": 2194593,
+      "auprc": 0.43320135372108004,
+      "ece": 0.060399319487095426,
+      "threshold": 0.002,
+      "per_slice_iou_median": 0.3254424450482293,
+      "sec": 3768.8,
+      "recipe": "phase1:p1_ctrl_b32 (val_iou=0.3874)",
+      "arm": "scratch",
+      "seed": 2,
+      "encoder": "resnet18",
+      "pretrained": false,
+      "scored_commit": "180bee0-dirty",
+      "scored_utc": "2026-08-08T18:22:40+00:00",
+      "tiler_regime": "post",
+      "val_iou": 0.46959932450492536
     }
   ]
 }

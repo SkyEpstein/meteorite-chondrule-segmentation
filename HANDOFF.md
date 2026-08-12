@@ -1,8 +1,99 @@
-# Session handoff, 2026-08-07
+# Session handoff, 2026-08-08
 
-Fifth handoff. Supersedes the 2026-08-04 one; the 2026-08-06 body is kept and
-amended in place, with today's changes marked [UPDATED 2026-08-07]. Read
+Sixth handoff. Supersedes the 2026-08-04 one; the 2026-08-06 body is kept and
+amended in place, with later changes marked [UPDATED]. Read
 [CHANGELOG.md](CHANGELOG.md)'s KNOWN ISSUES block before quoting any number.
+
+## READ THIS FIRST: the noise floor on TEST is 5.4x what this project assumed
+
+`resunet18_scratch_s30000` now has three seeds at 30,000 steps:
+
+```
+   seed 0  0.33569      seed 1  0.26098      seed 2  0.34233
+   mean 0.31300      SD 0.04517      spread 0.08135
+```
+
+**0.33569 was the best of three draws, not the model's score.** Every place this
+repo called it "the highest post-fix score" is retracted; the arm's score is
+0.31300 +/- 0.04517.
+
+**AND SO IS THE REFERENCE MODEL.** `unet2d_s30000`, the anchor every gap in this
+repo is quoted against, was also run three times the same day:
+
+```
+   seed 0 (the reference)  0.29409      seed 2  0.27631      seed 1  0.26639
+   mean 0.27893      SD 0.01403
+```
+
+0.29409 is the TOP of its own spread, +1.08 SD above its mean. **Every gap
+measured against it shifts by -0.01516 in the same direction**, because they all
+share that anchor: geometry augmentation -0.0501 becomes -0.0349, the 30k `full`
+arm -0.0328 becomes -0.0176, the prune +0.0087 becomes +0.0239, the scratch arm
++0.0189 becomes +0.0341.
+
+**There is NO single full-budget noise number, and an earlier draft of this file
+claimed there was.** The two configurations measured at 30,000 steps give
+**0.01403** (UNet2D) and **0.04517** (ResNet18-UNet), 3.2x apart. Do not carry
+one across architectures. Do not conclude UNet2D is the more stable one either:
+the SD intervals at n=3 are [0.0073, 0.0882] and [0.0235, 0.2840] and overlap
+heavily. Both are far above the 0.0084 the project used to reason with.
+
+Use the SD of the arms actually being compared. On that basis:
+
+| comparison | gap | test |
+|---|---|---|
+| scratch ResNet-18 vs UNet2D, both n=3 | **+0.0341** | SE 0.0273, **t = 1.25** |
+| geometry augmentation vs the UNet2D mean | -0.0349 | 2-sigma bar about 0.032 at the point-estimate SD |
+| 30k `full` arm vs the UNet2D mean | -0.0176 | inside |
+| pretraining, pretrained n=1 vs scratch n=3 | -0.0103 | inside |
+
+**Still nothing clears its noise, but two things are now close enough to be
+worth settling.** Geometry augmentation is marginally outside its bar at the
+point-estimate SD, though that bar ranges from about 0.017 to 0.20 across the
+SD's own interval, so it is the best CANDIDATE for a real effect here, not an
+established one. Two seeds of `unet2d_s30000_auggeom` would settle it. The
+ResNet-vs-UNet gap at t = 1.25 is the largest apparent effect in the project.
+
+It is real model variance, NOT threshold-selection variance. Seed 1 froze thr
+0.95 while seeds 0 and 2 chose 0.002, which made selection the obvious suspect.
+Holding the threshold fixed, SD is 0.0551 at 0.002 and 0.0488 at 0.95, against
+0.0452 with val-selected thresholds, so selection slightly REDUCES spread. Seed 1
+is below the others at both thresholds.
+
+## What 2026-08-08 changed
+
+1. The seed result above.
+2. **`pipeline_v2.run_all` now runs end to end on TWO meteorites** (2026-08-04
+   priority 2, previously never done). `python -m tests.test_pipeline_v2_multi`,
+   ~20 min. Two latent defects had to be fixed first: `stage2_sweep` called
+   `run_and_score` WITHOUT `leaderboard=False` while scoring a
+   `build_multi_split` split, which that function's docstring marks a [MUST]
+   (nothing was corrupted, there are zero `hier_*` rows); and `out_dir` named
+   only the final JSON while the split record, the maps and the reload all used
+   module-level `results_v2/`. CAVEAT: the synthetic chondrules are drawn from
+   disjoint intensity ranges, so the pipeline scores a perfect 1.000 and the test
+   CANNOT detect a leakage bug. Overlapping-intensity fixtures are not built.
+3. **The AUPRC question is settled and the 2026-08-07 entry had it backwards.**
+   The leaderboard values are CORRECT; the saved maps are lossy.
+   `run_and_score` computes metrics on float32 and saves float16, which
+   threshold metrics and 10-bin ECE survive and ranking metrics do not. Proved by
+   regenerating from a checkpoint: `resunet18_scratch_s30000` is 0.44301 in
+   float32, exactly its leaderboard value, and 0.33455 cast to float16, exactly
+   what the saved map gives. **Quote AUPRC from `results/leaderboard_all.json`,
+   never recompute it from `results/probs/`.** Sky chose to keep float16 and
+   carry the rule rather than double ~13 GB. AUPRC labels on
+   `results/figures/fp_penalty_pr.png` are understated; its curves and
+   precision/recall/FP counts are fine.
+4. **A clobber fixed before it fired.** `pretrained_probe` had no `--seed` and
+   left the seed out of the model name, so any replicate would have overwritten
+   seed 0's checkpoint, both maps and its leaderboard row under the same name.
+   Seed 0 keeps the historical name, others get `_seed{n}`.
+5. Sky's `src/split_protocol_audit.py` (untracked before this commit) measured
+   what the literature's random-slice protocol buys: leakage-free 0.1956,
+   no-buffer 0.1738, random-slice 0.2479 +/- 0.0331, **inflation +0.0524 IoU
+   (+27%)**. NOT MINE, and one thing to check before quoting: `no_buffer` came
+   out BELOW `leakage_free`, which is backwards for a leakier split, and both are
+   single deterministic runs with no seed spread.
 
 ## What 2026-08-07 changed
 
@@ -85,6 +176,18 @@ real result about the architecture. It just does not reach test.
 0.0289, so -0.033 alone is about 1.1 SD and not resolved. What makes it
 persuasive is four arms at two budgets all showing the same direction.
 
+[UPDATED 2026-08-08] Two corrections, pulling in opposite directions. The anchor
+`unet2d_s30000` is the top of its own three-seed spread (mean 0.27893), so the
+gap is **-0.0176**, not -0.033. But the right SD for a UNet2D-family comparison
+is **0.01403**, not 0.0289, so -0.0176 is about 1.25 of THAT SD. Still not
+resolved, and the arithmetic is now anchored rather than floating.
+
+Do NOT use the ResNet arm's 0.04517 here: it is a different architecture and 3.2x
+larger. The `full` arm's own seed SD is unmeasured at n=1, and it carries four
+aux channels, so borrowing plain UNet2D's 0.01403 is an assumption, not a
+measurement. The "four arms same direction" argument also thins: three of those
+four are at 7,200 steps, where the val gain, not the test gap, is what resolved.
+
 ## 2. Penalising false positives did not help
 
 Sky's mentor's proposal, and it had genuinely never been tried: the recall
@@ -156,7 +259,7 @@ Post-tiler-fix only. Everything else on the leaderboard is pre-fix and marked.
 
 | | test IoU | note |
 |---|---|---|
-| `resunet18_scratch_s30000` | **0.33569** | highest post-fix in the repo. n=1 seed, threshold on the grid floor |
+| `resunet18_scratch_s30000` | **0.31300 +/- 0.04517** | [UPDATED 2026-08-08] n=3 seeds (0.33569 / 0.26098 / 0.34233). The single-seed 0.33569 that this row used to quote, and called the highest post-fix score in the repo, was the best of three draws and is RETRACTED as a headline |
 | `resunet18_pretrained_s30000` | 0.30269 | its ImageNet twin |
 | `unet2d_s30000` | 0.29409 | Dice 0.455, prec 0.372, recall 0.584, AUPRC 0.427 |
 | `arm_full_s0_b30000` | 0.2613 | the composed full pipeline, 30k |
@@ -231,10 +334,14 @@ Sky's stated policy for the cleanup: **GitHub carries only accurate results, no
 disclaimers. If something is wrong, remove it. The CHANGELOG keeps the full
 record.** The README status block was rewritten under that policy on 2026-08-05
 and now leads with 0.29409 and 0.33569 rather than the withdrawn 0.3168.
+[UPDATED 2026-08-08] The README status block was rewritten again under the same
+policy: it now leads with the three-seed 0.31300 +/- 0.04517, and the 0.33569 it
+briefly led with is marked retracted there.
 
 ## Built this session and NOT yet run
 
-- `src/pipeline_v2.run_all` with two sources. Still never completed end to end.
+- `src/pipeline_v2.run_all` with two sources. [DONE 2026-08-08] It completes end
+  to end on two synthetic meteorites; see the top of this file.
 - `cnn_crossfit.py` has never run; there are no `cnn_xf` files. Fitting a
   confidence model on out-of-fold TRAIN predictions needs 5 folds at 30k first,
   roughly 11 hours. Sky's judgement was it would suffer distribution mismatch
@@ -245,13 +352,66 @@ and now leads with 0.29409 and 0.33569 rather than the withdrawn 0.3168.
 
 ## Next steps, in priority order
 
-1. **Get a second meteorite.** Nothing else moves the binding constraint, and
-   this session closed off three method routes at once.
-2. Commit the 44 pending files from a main-checkout session.
-3. Reconcile with `origin/main`, keeping `memory/style.md` and the em-dash pass.
-4. Run `pipeline_v2.run_all` with two synthetic sources so ingestion is proven
-   before real data lands.
-5. Settle the scratch arm's grid-floor threshold, which gates the 0.33569.
+1. **Get a second meteorite.** Nothing else moves the binding constraint. As of
+   2026-08-08 this is no longer an argument from principle: the measured
+   full-budget seed SD (0.01403 for UNet2D, 0.04517 for ResNet18-UNet) is on the
+   order of, or larger than, every effect anyone has tried to measure on test, so
+   ALH 83010 can barely answer method questions at all. The gate
+   is ANNOTATION, not acquisition: raw chondrite CT is plentiful, public
+   chondrule labels do not exist.
+2. **Reconcile with `origin/main`, then push. Not a fast-forward.** Measured
+   2026-08-08 with `git merge-tree` (non-destructive); the earlier "seven files
+   conflict" in this file was WRONG.
+
+   The two histories share only the initial commit `824e811` as a git ancestor,
+   but the second commit exists TWICE under different hashes: local `c313916`
+   and remote `14a2349` are byte-identical (same tree `0210266...`, same
+   patch-id `b329cec...`). That work was committed locally and also landed on
+   GitHub via PR #1, so git sees two unrelated commits holding the same content.
+
+   Genuinely one-sided: the remote has `153c48d` ("Rewrite docs for clarity,
+   remove em dashes, add style guide and repo description"), which rewrote
+   CHANGELOG +515, README +298, ROADMAP +318, constitution +203 and added
+   `memory/style.md`, which exists ONLY there. The laptop has everything from
+   `e37aa0e` onward.
+
+   **A straight merge conflicts in 37 files**, most of them `add/add` on
+   `src/*.py`, because the true merge base predates every source file.
+   **Rebasing instead collapses that to 14** and removes every spurious source
+   conflict, because the duplicate commits are content-identical:
+
+   ```
+   git rebase --onto origin/main c313916 main
+   ```
+
+   The 14 are the real overlap: CHANGELOG, README, ROADMAP,
+   memory/constitution.md, .gitignore, two figures, the complete-model spec, and
+   the six src files 153c48d actually edited (data_scaling, evaluate,
+   make_figures, models_cnn, pipeline_v2, poc_images).
+
+   Sky's call on 2026-08-08 was to keep this SEPARATE from the commit, because
+   the four prose files are exactly the ones carrying the retractions and
+   resolving one the wrong way silently un-retracts a corrected number.
+   **After rebasing, re-grep `0.33569`** and confirm it still reads as retracted
+   in README, ROADMAP and this file. Also re-grep `0.5203` and the AUPRC block.
+
+   [MUST] Do NOT rebase while a training job is running: `reference_replicates`
+   writes probability maps, checkpoints and `results/leaderboard_all.json` while
+   a rebase rewrites the tree under it. `origin/main` was last fetched
+   2026-08-07; re-fetch first.
+4. Seeds for anything still quoted at n=1. The list is short and now known to
+   matter: `resunet18_pretrained_s30000`, the 30k `full` arm, and
+   `unet2d_s30000` itself, which is the project's reference number and has never
+   been replicated.
+5. Overlapping-intensity synthetic fixtures, so `tests/test_pipeline_v2_multi`
+   can actually detect a leakage bug instead of scoring a trivial 1.000.
+6. A budget knob for `confidence_sweep`. 787 s of that test's 20 minutes is one
+   bake-off candidate (`mlp`), and a 20-minute plumbing test will not be run.
+
+DROPPED: "settle the scratch arm's grid-floor threshold, which gates the
+0.33569." Measured 2026-08-08 and it gates nothing. Holding the threshold fixed
+across the three seeds gives SD 0.0551 at 0.002 and 0.0488 at 0.95, against
+0.0452 with val-selected thresholds, so selection is not the variance source.
 
 ## Respect the machine
 
