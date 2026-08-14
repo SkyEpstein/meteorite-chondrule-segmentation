@@ -1,0 +1,21 @@
+{
+  "factor": 4,
+  "grad_w": 1.0,
+  "token_grid": 32,
+  "regime": "VQ-VAE, 4x downsample, 128px patch -> 32x32 tokens, codebook 512 x 64, EMA updates, 40 epochs, gradient-loss weight 1. Patch pool from src.synth_patches (generator boundary enforced there). The held-out split here is patch-level, for measuring reconstruction only; it is NOT the leakage boundary.",
+  "baseline_psnr_matched_bitrate": 31.001271953135443,
+  "held_out": {
+    "psnr": 33.72457882176991,
+    "perplexity": 412.7643414860568,
+    "codes_used": 512,
+    "codebook": 512
+  },
+  "gate_passed": true,
+  "params": 1529793,
+  "sec": 1607.7,
+  "holdout": "SAME-SLICE patch-level split: all held-out patches come from slices that also supplied training patches, and crops may overlap spatially. PSNR/perplexity are optimistic by an unmeasured amount. Valid for comparing factors, which share the holdout.",
+  "gate_passed_note": "`gate_passed` covers the PSNR and perplexity gates ONLY. It does NOT cover the segmenter-preservation check (--segcheck), which is what actually decided this arm; f=8 records gate_passed=true and was rejected there. See spec task 2.",
+  "n_patches": 8328,
+  "holdout_seed": 0,
+  "held_frac": 0.1
+}

@@ -1,0 +1,14 @@
+{
+  "regime": "base segmenter run directly on 128px patches (no tiling), original vs VQ-VAE reconstruction, at the model's val-frozen threshold. Measures whether the tokenizer preserves the signal the segmenter consumes.",
+  "n_patches": 400,
+  "threshold": 0.002,
+  "checkpoint": "results/checkpoints/unet2d_s30000_seed1.pt",
+  "downsample_factor": 4,
+  "mean_abs_delta_prob": 0.06984781473875046,
+  "max_abs_delta_prob": 0.9999998211860657,
+  "corr": 0.7267828678694431,
+  "agreement_iou": 0.6167700222178184,
+  "decision_flip_frac": 0.07258926391601563,
+  "pos_frac_original": 0.14288360595703126,
+  "pos_frac_recon": 0.16335586547851563
+}

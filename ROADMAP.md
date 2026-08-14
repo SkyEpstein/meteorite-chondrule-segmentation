@@ -7,9 +7,41 @@ Governed by [memory/constitution.md](memory/constitution.md) ·
 results in [CHANGELOG.md](CHANGELOG.md) ·
 specs in [specs/2026-07-23-chondrule-segmentation/](specs/2026-07-23-chondrule-segmentation/)
 
-**Last updated:** 2026-08-04
+**Last updated:** 2026-08-08
 
 > ⚠️ **Read the KNOWN ISSUES block at the top of [CHANGELOG.md](CHANGELOG.md) before quoting any number here.** Several results in this file are withdrawn or non-reproducing.
+
+---
+
+## 2026-08-08: synthetic data via VQ-VAE + MaskGIT — IN FLIGHT, 2 of 5 tasks
+
+Sky's mentor's proposal, citing Microscopy and Microanalysis 32(S1) ozag053.1004.
+Spec: [specs/2026-08-08-synthetic-maskgit/spec.md](specs/2026-08-08-synthetic-maskgit/spec.md).
+Retargeted by Sky at the CONFIDENCE stages, not base training, because the base
+model records train IoU 1.000 and so makes no errors on anything it trained on.
+Synthetic pairs stay held out; the base errs on them genuinely and those errors
+are the confidence-fitting data.
+
+| task | state |
+|---|---|
+| 1. patch pool + leakage boundary | done, after two boundary bugs |
+| 2. VQ-VAE tokenizer | done at f=4; f=8 fails the segmenter-preservation gate |
+| 3. conditioned MaskGIT transformer | NOT STARTED |
+| 4. error-structure match gate | NOT STARTED |
+| 5. confidence stages, scored on real test | NOT STARTED |
+
+**The open question that decides the arm.** The tokenizer perturbs the base
+segmenter: at f=8 it more than doubles the predicted-positive fraction (2.28x),
+at f=4 it still inflates it 1.14x and flips 7.3% of pixel decisions. Fidelity and
+compressibility trade directly against each other, and f=4 costs the transformer
+1,024 tokens per patch against 256, roughly sixteen times the attention. Whether
+the remaining distortion is small enough for confidence models to learn a
+transferable error structure is exactly what task 4 exists to measure, and it has
+not been run. The usable window may be empty.
+
+**Also unresolved:** the reconstruction holdout is same-slice, so the tokenizer's
+PSNR and segcheck figures are optimistic by an unmeasured amount. They remain
+valid for comparing factors, which share the holdout.
 
 ---
 

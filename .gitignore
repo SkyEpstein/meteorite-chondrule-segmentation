@@ -27,3 +27,6 @@ logs/
 # model checkpoints (regenerable, large)
 results/checkpoints/
 *.pt
+
+# Synthetic-data patch pool (94 MB, regenerable: python -m src.synth_patches)
+results/synth/*.npz

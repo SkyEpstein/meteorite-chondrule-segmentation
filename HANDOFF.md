@@ -304,11 +304,48 @@ not have chosen: those two differ by 0.001 on val against a measured bar of
   it, as (1.96+0.84) for 80% power. They answer different questions. The field
   NAME `mde_iou` is wrong for what it computes.
 
-## Uncommitted work: 44 files, and it still cannot be committed from a worktree
+## Uncommitted work, and it still cannot be committed from a worktree
 
-`HEAD` is still `18ab53a`. Everything from 2026-08-04 onward is staged or
-untracked. Commit message drafted at
-`/tmp/claude-501/METEORITE_COMMIT_MSG_2026-08-04.txt`.
+[UPDATED 2026-08-14] The 2026-08-04 backlog LANDED: `180bee0` and `a653490` are
+committed. HEAD is `a653490`, and 5 commits are unpushed. The staged work now is
+the synthetic-data arm (see below).
+
+## The synthetic-data arm: 2 of 5 tasks, and the mentor's idea is UNTESTED
+
+Sky's mentor proposed synthetic data via a conditioned MaskGIT + VQ-VAE.
+Spec: `specs/2026-08-08-synthetic-maskgit/spec.md`. Sky retargeted it at the
+CONFIDENCE stages, held OUT of base training, because the base records train IoU
+1.000 and so errs on nothing it trained on.
+
+**Nothing has been generated, trained on, or scored.** Tasks 3 (MaskGIT
+transformer), 4 (error-structure gate) and 5 (confidence stages on real test) are
+NOT started. Do not describe this arm as tested.
+
+What tasks 1 and 2 established, which is real:
+
+| tokenizer | agreement IoU | flips | positive fraction orig -> recon |
+|---|---|---|---|
+| f=8 (16x16 grid) | 0.3302 | 23.6% | 0.1429 -> 0.3255 (**2.28x**) |
+| f=4 (32x32 grid) | 0.6168 | 7.3% | 0.1429 -> 0.1634 (1.14x) |
+
+At the compression the cited abstract uses, the tokenizer strips matrix texture
+and more than doubles the segmenter's predicted-positive rate, because this
+model's documented failure is calling confusable matrix "chondrule". f=4 recovers
+most of it at 16x the transformer attention. **f=2 was never measured**: launched,
+killed when the pool was found contaminated, never relaunched.
+
+OPEN, and they are Sky's calls, not the next session's to assume:
+1. The reconstruction holdout is SAME-SLICE, so the tokenizer's absolute figures
+   are optimistic by an unmeasured amount. Rebuilding it slice-disjoint is cheap
+   and not done. It is the only quantitative evidence in that commit.
+2. Tasks 3-5 are the expensive two, and `HANDOFF.md`'s own priority 1 is "get a
+   second meteorite, nothing else moves the binding constraint". The spec
+   pre-registers that a real +0.03 gain would sit at or below test noise. This
+   deserves an explicit go/no-go rather than continuing by default.
+3. The generator is fit on the base segmenter's OWN train slices, so the base's
+   errors on synthetic samples may be systematically softer than on real
+   held-out data. That is the premise the whole retarget rests on, and task 4's
+   gate is what would catch it.
 
 **A WORKTREE SESSION CANNOT COMMIT IN THIS REPO.** All three gates (review,
 oversee, test) key state by SESSION directory in

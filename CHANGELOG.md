@@ -7,6 +7,21 @@ project. Honest numbers only; evaluation regime stated with every metric.
 
 ### ⚠️ KNOWN ISSUES IN THIS COMMIT (found by pre-commit review — read first)
 
+- **[NEW 2026-08-14] The synthetic-data arm's tokenizer figures are OPTIMISTIC,
+  and its acceptance bar was drawn after the fact.** Three things to have before
+  quoting anything from the 2026-08-08 synthetic entry. (1) The reconstruction
+  holdout is SAME-SLICE, so PSNR, perplexity and every segcheck figure are
+  optimistic by an unmeasured amount. They are valid for COMPARING f=8 against
+  f=4, which share the holdout, not as absolute values. A slice-disjoint split is
+  cheap and is not built, and `extract()` does not record crop coordinates so the
+  overlap cannot be audited retroactively. (2) The segcheck acceptance bar
+  (agreement >= 0.60, flips <= 10%, inflation <= 1.20x) was set AFTER seeing the
+  data and is drawn snugly around f=4; it has no independent derivation and is
+  not evidence that f=4 is good enough. (3) f=4 still perturbs the segmenter:
+  7.3% of pixel decisions flip and it over-predicts by 14%. Whether that is small
+  enough is task 4's question and is unanswered. **The mentor's idea itself
+  remains UNTESTED**: tasks 3, 4 and 5 are not built.
+
 - **🔴 ALL CNN-FAMILY TEST SCORES WERE MEASURED WITH TILED INFERENCE, AND TILED
   INFERENCE IS STILL THE DEFAULT — but it has TWO defects, one fixed and one
   accepted (2026-07-29).** A whole-slice replacement was tried and **reverted**;
@@ -216,6 +231,128 @@ project. Honest numbers only; evaluation regime stated with every metric.
   today (winning recipe has `aug: false`).
 
 
+
+### 2026-08-08 (later): Synthetic data via VQ-VAE + MaskGIT, tasks 1 and 2
+
+*Proposed by Sky's mentor, citing Microscopy and Microanalysis 32(S1)
+ozag053.1004 (conditioned MaskGIT + VQ-VAE on SEM micrographs). Sky chose the
+faithful two-stage build. Spec: `specs/2026-08-08-synthetic-maskgit/spec.md`.
+IN PROGRESS: tasks 1 and 2 of 5. The transformer, the error-structure gate and
+the confidence-stage evaluation are NOT built.*
+
+**What the cited abstract does not do.** It shows unconditional synthesis,
+inpainting and outpainting, reports **no quantitative metrics**, and never
+generates (image, label) pairs to train a segmenter. The label-conditioned path
+is the part we would have to build and the part it does not evidence. Recorded
+so the abstract is never cited as support for a result it does not claim.
+
+**[RETARGETED] Synthetic data must be HELD OUT of base training.** Sky's
+direction: aim it at the confidence stages, which fit on only 60 val slices
+holding 19 to 36 chondrules and whose every measured effect is below the noise
+floor. But the naive version gives them nothing: the base model records **train
+IoU 1.000**, so anything inside its training set produces no errors to learn
+from. Held out, the base errs genuinely and those errors become confidence-fitting
+data with exact labels.
+
+**[LEAKAGE] TWO boundary bugs, and the second was found by review, not by my
+check.** Defining the generator's extra data as "every slice in no zone" swept in
+all 44 **buffer** slices, whose nearest held-out neighbour is 1 away. Adjacent CT
+slices are near-duplicates, so those are exactly what the buffer of 12 exists to
+exclude.
+
+The fix for that was itself wrong, and the way it was wrong is the lesson.
+`split.mark_buffer` marks `range(a - buffer, a)`, i.e. distances **1 through 12**,
+so distance 12 is INSIDE the buffer. A `gap < 12` test therefore still admitted
+the outermost buffer slice on each side, absolute slices **168 and 351**, both
+labelled `buffer` by `split.json` itself. `assert_boundary` could not catch it
+because it re-applied the same predicate that built the pool: **a check derived
+from the thing it checks is not a check.** An earlier draft of this entry claimed
+"all 44" were removed; 178 - 136 = 42, and the two survivors sat in the tokenizer
+pool until review found them.
+
+Now: the unlabeled set is derived from `split.json`'s BAND rather than by
+subtracting zones, which needs no distance heuristic at all; `assert_boundary`
+checks `split.json`'s own `slab_per_band_slice` labels; `pools()` asserts before
+returning so no caller can bypass it; `load_patches` re-validates the cached pool
+on every load; and `tests/test_synth_boundary.py` derives every expectation from
+`split.json` and fails on the old behaviour. `tests/test_synth_vqvae.py` pins
+the three VQ-VAE defects that were hand-fixed: the `paths_for` clobber that
+destroyed the MSE-only checkpoint, the factor-blind baseline, and `load_model`
+guessing an unrecorded architecture. Final pool: **134** unlabeled
+slices, nearest held-out neighbour **81 (val) and 158 (test)**, tokenizer 347
+slices, MaskGIT the 213 labeled. The patch pool and both tokenizers were rebuilt
+from the corrected boundary; the numbers below are from the rebuild.
+
+**Task 2, the tokenizer: passes its stated gates and FAILS the one that matters,
+until the compression is halved.** 128px patches, codebook 512, EMA updates,
+gradient-loss weight 1.0, 40 epochs. The downsample factor is the variable.
+
+| tokenizer (rebuilt pool, 8,328 patches) | PSNR | its own baseline | perplexity | segmenter agreement IoU | decision flips | positive fraction orig -> recon |
+|---|---|---|---|---|---|---|
+| f=8, 16x16 grid, + gradient loss | 30.91 | 28.12 | 323.5 | 0.3302 | 23.6% | 0.1429 -> **0.3255 (2.28x)** |
+| f=4, 32x32 grid, + gradient loss | 33.72 | 31.00 | 412.8 | **0.6168** | **7.3%** | 0.1429 -> **0.1634 (1.14x)** |
+
+**PSNR and codebook perplexity passed at BOTH settings and were not the useful
+signal.** The load-bearing check is `--segcheck`: run the base segmenter on an
+original patch and on its reconstruction, and compare. At f=8 the tokenizer
+**more than doubles the predicted-positive fraction (2.28x)**, because it strips
+matrix texture and this model's documented failure is calling confusable matrix
+"chondrule". Synthetic images from it would induce systematic over-prediction
+and the confidence stages would be fitted on the wrong error structure.
+
+Halving the compression to f=4 fixes most of it: agreement 0.3302 to 0.6168,
+flips 23.6% to 7.3%, over-prediction 2.28x to 1.14x, and the rendered
+reconstructions visibly retain matrix speckle and sharp rims where f=8 returned
+smooth blobs. Not clean: 7.3% of decisions still flip and the model still
+over-predicts by 14%. The cost is 1,024 tokens per patch against 256, roughly
+sixteen times the MaskGIT attention.
+
+[CORRECTED] `baseline_psnr` ignored the downsample factor, so an earlier f=4
+gate was scored against the f=8 control and its margin overstated by 2.89 dB.
+The table above uses each model's own matched-bitrate control.
+
+**[DISCLOSED, not fixed] The reconstruction holdout is same-slice, so every
+number in the table above is optimistic by an unmeasured amount.** The 10%
+holdout is drawn at the PATCH level: all 832 held-out patches come from slices
+that also supplied training patches, and with 24 random 128px crops per slice
+they frequently overlap training crops spatially. `extract()` does not record
+crop coordinates, so the overlap cannot be audited after the fact. A
+slice-disjoint split would cost nothing and is not built. The comparison BETWEEN
+f=8 and f=4 is unaffected, since both use the identical holdout; the absolute
+figures are not generalisation estimates.
+
+[CORRECTED] An earlier draft said "the harness is verified: an identity
+transform returns agreement IoU exactly 1.0000 and zero flips". That control is
+a **tautology**: with the reconstruction replaced by the identity, both branches
+of `segcheck` share every line of code and every tensor, so 1.0000 holds even if
+the normalisation constants were garbage. It shows the comparison is wired up
+and nothing about the round-trip. Also note `segcheck` measures the 400
+highest-variance patches, not a random sample, so its figures describe the
+upper half of the pool by variance, not a random sample (400 of 832, so "tail"
+was the wrong word); and `load_patches` clips at the 0.5/99.5 percentiles,
+so about 0.9% of pixels are saturated before the segmenter sees them.
+
+**Two of my own calls were wrong, both recorded because the reasoning is
+reusable.** First, the render was the only thing that exposed the blur; PSNR
+rose while the segmenter's output diverged, the same pattern as the tiled-
+inference defect that passed every scalar check. Second, when the gradient loss
+failed I argued from theory that the reconstruction OBJECTIVE was at fault, since
+any MSE, including on a linear filter of the image, is minimised by the
+conditional mean. That reasoning is sound and the conclusion was wrong:
+**halving the compression fixed most of it** with the same objective. Agreement
+IoU 0.3302 to 0.6168, flips 23.6% to 7.3%, over-prediction from 2.28x to
+1.14x.
+
+**Where that leaves the route.** Fidelity and compressibility trade off directly
+against each other here, and the usable window may be narrow. f=4 costs the
+transformer 1,024 tokens per patch against 256, roughly sixteen times the
+attention. **f=2 was never measured.** It was launched as a probe, killed when
+the patch pool was found to contain buffer slices, and not relaunched after the
+rebuild; there is no f=2 artifact and no f=2 process. An earlier draft of this
+entry said "f=2 is running as a probe only", which was false at commit time. At
+4,096 tokens per patch it is never a
+candidate. f=4 is better but not clean: 7.3% of decisions still flip and
+over-prediction is still +14%.
 
 ### 2026-08-08: The best number in the repo was seed luck, and the seed SD is 5.4x what was assumed
 
